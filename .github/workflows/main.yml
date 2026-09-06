@@ -1,4 +1,4 @@
-name: Build ARIA APK
+name: Build ARIA ULTIMATE 2.0 APK
 
 on:
   workflow_dispatch:
@@ -10,21 +10,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
         run: |
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Extract project
-        run: unzip -q ARIA_ANDROID_FINAL_FIXED.zip
+      - name: Extract ARIA ULTIMATE 2.0
+        run: |
+          unzip -q ARIA_ULTIMATE_2.0_FINAL.zip
+          find . -maxdepth 4 -type f -name settings.gradle.kts -print
 
       - name: Install Gradle
         run: |
@@ -33,10 +38,12 @@ jobs:
 
       - name: Build APK
         run: |
-          ./gradle-8.13/bin/gradle -p ARIA_ANDROID assembleDebug
+          PROJECT_DIR=$(find . -type f -name settings.gradle.kts -print -quit | xargs dirname)
+          echo "Project: $PROJECT_DIR"
+          ./gradle-8.13/bin/gradle -p "$PROJECT_DIR" assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ARIA-debug-apk
-          path: ARIA_ANDROID/app/build/outputs/apk/debug/app-debug.apk
+          name: ARIA-ULTIMATE-2.0-debug
+          path: "**/app/build/outputs/apk/debug/app-debug.apk"
