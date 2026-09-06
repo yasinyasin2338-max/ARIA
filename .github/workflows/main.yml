@@ -17,7 +17,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: "21"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -26,24 +26,38 @@ jobs:
         run: |
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Extract ARIA ULTIMATE 2.0
+      - name: Extract ARIA ULTIMATE
         run: |
-          unzip -q ARIA_ULTIMATE_2.0_FINAL.zip
-          find . -maxdepth 4 -type f -name settings.gradle.kts -print
+          mkdir -p aria_extract
+          unzip -oq ARIA_ULTIMATE_2.0_FINAL.zip -d aria_extract
 
-      - name: Install Gradle
+      - name: Locate Android project
+        run: |
+          PROJECT_DIR=$(find aria_extract -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" \) -print -quit | xargs dirname)
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "Android project not found"
+            find aria_extract -maxdepth 5 -type f | head -200
+            exit 1
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Found project: $PROJECT_DIR"
+
+      - name: Install Gradle 8.13
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.13-bin.zip
           unzip -q gradle-8.13-bin.zip
 
-      - name: Build APK
+      - name: Build ARIA APK
         run: |
-          PROJECT_DIR=$(find . -type f -name settings.gradle.kts -print -quit | xargs dirname)
-          echo "Project: $PROJECT_DIR"
           ./gradle-8.13/bin/gradle -p "$PROJECT_DIR" assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Find APK
+        run: |
+          find "$PROJECT_DIR" -type f -name "*.apk" -print
+
+      - name: Upload ARIA APK
         uses: actions/upload-artifact@v4
         with:
-          name: ARIA-ULTIMATE-2.0-debug
-          path: "**/app/build/outputs/apk/debug/app-debug.apk"
+          name: ARIA-ULTIMATE-2.0-APK
+          path: "**/app/build/outputs/apk/debug/*.apk"
+          if-no-files-found: error
