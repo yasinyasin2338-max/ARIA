@@ -20,15 +20,23 @@ jobs:
       - uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Build ARIA APK
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Extract project
+        run: unzip -q ARIA_ANDROID_FINAL_FIXED.zip
+
+      - name: Install Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.13-bin.zip
+          unzip -q gradle-8.13-bin.zip
+
+      - name: Build APK
+        run: |
+          ./gradle-8.13/bin/gradle -p ARIA_ANDROID assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ARIA-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ARIA_ANDROID/app/build/outputs/apk/debug/app-debug.apk
