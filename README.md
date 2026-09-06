@@ -1,20 +1,12 @@
-# ARIA ULTIMATE
-
-Mobile-first Persian personal AI with chat, web search, voice UI, local memory, text-to-image and image-to-image editing.
-
-## Run
-
-```bash
-npm install
-npm start
-```
-
-Set `OPENAI_API_KEY` on the server. Optional `ARIA_ACCESS_TOKEN` enables private access.
+# ARIA ULTIMATE 2.0
+All-in-one Persian personal AI app: chat, memory, voice UI, web search, image generation, image-to-image editing, video/image-to-video provider adapter, settings and revenue planning.
 
 ## Android
+Open `ARIA_ANDROID` in Android Studio or build with Gradle 8.13 + JDK 21.
 
-The web app can be bundled into an Android shell, but the server/API must remain reachable for AI features.
+## Server
+Run `npm install` then `npm start` in `ARIA_SERVER`. Copy `.env.example` to `.env` and configure secrets on the server only.
 
-## Security boundary
+Video is provider-agnostic: set `ARIA_VIDEO_ENDPOINT` and `ARIA_VIDEO_TOKEN` for a compatible video service. No app can honestly provide unlimited generation without a real provider and its quotas.
 
-Cybersecurity assistance is designed for authorized defensive testing and labs. The image system follows the provider's safety rules; it is not an unrestricted sexual-content generator.
+Cybersecurity features are intended for authorized/defensive testing only.
