@@ -24,9 +24,7 @@ public class MainActivity extends Activity {
     private static final String URL = "https://aria-v4-production.up.railway.app/";
     private static final String WAKE_ACTION = "com.yasin.aria.WAKE";
     private final BroadcastReceiver wakeReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) {
-            deliverWake(intent.getStringExtra("text"));
-        }
+        @Override public void onReceive(Context context, Intent intent) { deliverWake(intent.getStringExtra("text")); }
     };
 
     @Override public void onCreate(Bundle state) {
@@ -78,9 +76,7 @@ public class MainActivity extends Activity {
                     .build();
             Executor executor = getMainExecutor();
             prompt.authenticate(new android.os.CancellationSignal(), executor, new BiometricPrompt.AuthenticationCallback() {
-                @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
-                    deliverWake("ARIA آماده است");
-                }
+                @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) { deliverWake("ARIA آماده است"); }
             });
         } catch (Exception ignored) {}
     }
@@ -93,7 +89,7 @@ public class MainActivity extends Activity {
         if (web == null) return;
         try {
             String safe = JSONObject.quote(text == null ? "سلام آریا" : text);
-            web.post(() -> web.evaluateJavascript("window.dispatchEvent(new CustomEvent('ariaWake',{detail:{text:" + safe + "}}));", null));
+            web.post(() -> web.evaluateJavascript("(()=>{const i=document.getElementById('input');const f=document.getElementById('form');if(i&&f){i.value=" + safe + ";f.requestSubmit();}})();", null));
         } catch (Exception ignored) {}
     }
 
