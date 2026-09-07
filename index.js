@@ -1,6 +1,5 @@
 import express from 'express';
 import OpenAI from 'openai';
-import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -10,13 +9,10 @@ const port = Number(process.env.PORT) || 10000;
 const root = process.cwd();
 const webDir = await fs.access(path.join(root, 'web')).then(() => path.join(root, 'web')).catch(() => root);
 
-// ARIA uses OpenRouter's zero-cost model router for text by default.
-// OpenAI is kept only as an optional legacy media provider; chat never depends on it.
-const openRouterKey = process.env.OPENROUTER_API_KEY || process.env['Aria-openrouter-key'] || '';
-const openRouter = openRouterKey ? new OpenAI({
-  apiKey: openRouterKey,
-  baseURL: 'https://openrouter.ai/api/v1'
-}) : null;
+// ARIA chat uses OpenRouter. Accept the existing Railway secret name so no secret
+// needs to be pasted into chat or recreated just because the variable is named differently.
+const openRouterKey = process.env.OPENROUTER_API_KEY || process.env['Aria-openrouter-key'] || process.env['Aria-key'] || '';
+const openRouter = openRouterKey ? new OpenAI({ apiKey: openRouterKey, baseURL: 'https://openrouter.ai/api/v1' }) : null;
 const MODEL = process.env.ARIA_MODEL || 'openrouter/free';
 const accessToken = process.env.ARIA_ACCESS_TOKEN || '';
 
@@ -35,7 +31,7 @@ app.use((req, res, next) => {
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
   service: 'ARIA ULTIMATE',
-  version: '3.0.0-free',
+  version: '3.1.0-free',
   provider: 'OpenRouter',
   model: MODEL,
   configured: Boolean(openRouterKey)
@@ -59,20 +55,12 @@ app.post('/api/chat', async (req, res) => {
     const memory = typeof body.memory === 'string' ? body.memory : '';
     if (!message) return res.status(400).json({ error: 'message required' });
 
-    const messages = [
-      {
-        role: 'system',
-        content: 'You are ARIA, a capable Persian personal assistant. Reply in Persian when the user writes Persian. Be helpful and concise by default. Only assist cybersecurity work when it is authorized and defensive. Never claim to have performed an action unless it was actually performed.'
-      },
-      {
-        role: 'user',
-        content: `Memory:\n${memory.slice(-12000)}\n\nUser:\n${String(message)}`
-      }
-    ];
-
     const response = await openRouter.chat.completions.create({
       model: MODEL,
-      messages
+      messages: [
+        { role: 'system', content: 'You are ARIA, a capable Persian personal assistant. Reply in Persian when the user writes Persian. Be helpful and concise by default. Only assist cybersecurity work when it is authorized and defensive. Never claim to have performed an action unless it was actually performed.' },
+        { role: 'user', content: `Memory:\n${memory.slice(-12000)}\n\nUser:\n${String(message)}` }
+      ]
     });
 
     res.json({ text: response.choices?.[0]?.message?.content || '' });
@@ -82,7 +70,6 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// Optional media endpoint. Text chat remains free; image/video providers are configured separately.
 async function saveDataUrl(data) {
   const match = String(data || '').match(/^data:([^;]+);base64,(.+)$/);
   if (!match) throw new Error('invalid image');
@@ -123,9 +110,7 @@ app.post('/api/image', mediaHandler);
 app.post('/api/image-edit', mediaHandler);
 
 app.use((req, res) => {
-  if (req.method === 'GET' && !req.path.startsWith('/api/')) {
-    return res.sendFile(path.join(webDir, 'index.html'));
-  }
+  if (req.method === 'GET' && !req.path.startsWith('/api/')) return res.sendFile(path.join(webDir, 'index.html'));
   res.status(404).json({ error: 'Not found' });
 });
 
