@@ -58,9 +58,9 @@ public class AriaVoiceService extends Service {
                     Voice best = null;
                     if (voices != null) for (Voice v : voices) {
                         Locale l = v.getLocale();
-                        String n = String.valueOf(v.getName()).toLowerCase(Locale.ROOT);
+                        String voiceName = String.valueOf(v.getName()).toLowerCase(Locale.ROOT);
                         if (l != null && l.getLanguage().equals("fa")) {
-                            if (n.contains("female") || n.contains("woman") || n.contains("girl") || n.contains("sara") || n.contains("zira")) { best = v; break; }
+                            if (voiceName.contains("female") || voiceName.contains("woman") || voiceName.contains("girl") || voiceName.contains("sara") || voiceName.contains("zira")) { best = v; break; }
                             if (best == null) best = v;
                         }
                     }
