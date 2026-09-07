@@ -7,29 +7,39 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.hardware.biometrics.BiometricPrompt;
 import android.os.Build;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.hardware.biometrics.BiometricPrompt;
 
 import org.json.JSONObject;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.Executor;
 
 public class MainActivity extends Activity {
     private WebView web;
+    private TextToSpeech tts;
     private static final String URL = "https://aria-v4-production.up.railway.app/";
     private static final String WAKE_ACTION = "com.yasin.aria.WAKE";
+
     private final BroadcastReceiver wakeReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) { deliverWake(intent.getStringExtra("text")); }
+        @Override public void onReceive(Context context, Intent intent) {
+            showWake(intent.getStringExtra("text"));
+        }
     };
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         requestRuntimePermissions();
+        initTts();
         setupWebView();
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(wakeReceiver, new IntentFilter(WAKE_ACTION), Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(wakeReceiver, new IntentFilter(WAKE_ACTION));
@@ -50,12 +60,39 @@ public class MainActivity extends Activity {
         if (requestCode == 10 && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) startVoiceServiceIfAllowed();
     }
 
+    private void initTts() {
+        tts = new TextToSpeech(this, status -> {
+            if (status != TextToSpeech.SUCCESS || tts == null) return;
+            try {
+                tts.setLanguage(new Locale("fa", "IR"));
+                tts.setSpeechRate(1.02f);
+                tts.setPitch(1.08f);
+                if (Build.VERSION.SDK_INT >= 21) {
+                    Set<Voice> voices = tts.getVoices();
+                    if (voices != null) {
+                        Voice best = null;
+                        for (Voice v : voices) {
+                            String n = String.valueOf(v.getName()).toLowerCase(Locale.ROOT);
+                            Locale l = v.getLocale();
+                            if (l != null && l.getLanguage().equals("fa")) {
+                                if (n.contains("female") || n.contains("woman") || n.contains("girl") || n.contains("sara") || n.contains("zira")) { best = v; break; }
+                                if (best == null) best = v;
+                            }
+                        }
+                        if (best != null) tts.setVoice(best);
+                    }
+                }
+            } catch (Exception ignored) {}
+        });
+    }
+
     private void setupWebView() {
         web = new WebView(this);
         web.setWebViewClient(new WebViewClient());
         web.setWebChromeClient(new WebChromeClient(){
             @Override public void onPermissionRequest(final PermissionRequest r){ runOnUiThread(() -> r.grant(r.getResources())); }
         });
+        web.addJavascriptInterface(new AriaBridge(), "ARIA");
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -78,8 +115,8 @@ public class MainActivity extends Activity {
         try {
             BiometricPrompt prompt = new BiometricPrompt.Builder(this)
                     .setTitle("ورود به ARIA")
-                    .setSubtitle("برای دسترسی به دستیار، هویت خود را تأیید کنید")
-                    .setDescription("اثر انگشت یا روش بیومتریک دستگاه")
+                    .setSubtitle("اثر انگشت یا قفل دستگاه")
+                    .setDescription("برای ورود امن به دستیار")
                     .setNegativeButton("بعداً", getMainExecutor(), (dialog, which) -> {})
                     .build();
             Executor executor = getMainExecutor();
@@ -88,15 +125,28 @@ public class MainActivity extends Activity {
     }
 
     private void handleWakeIntent(Intent intent) {
-        if (intent != null && intent.getBooleanExtra("wake", false)) deliverWake(intent.getStringExtra("wake_text"));
+        if (intent != null && intent.getBooleanExtra("wake", false)) showWake(intent.getStringExtra("wake_text"));
     }
 
-    private void deliverWake(String text) {
+    private void showWake(String text) {
         if (web == null) return;
         try {
             String safe = JSONObject.quote(text == null ? "سلام آریا" : text);
-            web.post(() -> web.evaluateJavascript("(()=>{const i=document.getElementById('input');const f=document.getElementById('form');if(i&&f){i.value=" + safe + ";f.requestSubmit();}})();", null));
+            web.post(() -> web.evaluateJavascript("window.ariaWake && window.ariaWake(" + safe + ");", null));
         } catch (Exception ignored) {}
+    }
+
+    public class AriaBridge {
+        @JavascriptInterface public void speak(String text) { runOnUiThread(() -> speakNative(text)); }
+        @JavascriptInterface public void stopSpeaking() { runOnUiThread(() -> { if (tts != null) tts.stop(); }); }
+        @JavascriptInterface public String voiceReady() { return tts != null ? "1" : "0"; }
+    }
+
+    private void speakNative(String text) {
+        if (tts == null || text == null || text.trim().isEmpty()) return;
+        String safe = text.trim();
+        if (safe.length() > 4000) safe = safe.substring(0, 4000);
+        try { tts.speak(safe, TextToSpeech.QUEUE_FLUSH, null, "aria-web-" + System.currentTimeMillis()); } catch (Exception ignored) {}
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -107,6 +157,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         try { unregisterReceiver(wakeReceiver); } catch (Exception ignored) {}
+        if (tts != null) { try { tts.stop(); tts.shutdown(); } catch (Exception ignored) {} tts = null; }
         super.onDestroy();
     }
 
