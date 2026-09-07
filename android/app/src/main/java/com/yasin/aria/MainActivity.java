@@ -2,7 +2,6 @@ package com.yasin.aria;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -17,6 +16,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import org.json.JSONObject;
 import java.util.concurrent.Executor;
 
 public class MainActivity extends Activity {
@@ -25,8 +25,7 @@ public class MainActivity extends Activity {
     private static final String WAKE_ACTION = "com.yasin.aria.WAKE";
     private final BroadcastReceiver wakeReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-            String text = intent.getStringExtra("text");
-            deliverWake(text == null ? "سلام آریا" : text);
+            deliverWake(intent.getStringExtra("text"));
         }
     };
 
@@ -87,15 +86,15 @@ public class MainActivity extends Activity {
     }
 
     private void handleWakeIntent(Intent intent) {
-        if (intent != null && intent.getBooleanExtra("wake", false)) {
-            deliverWake(intent.getStringExtra("wake_text"));
-        }
+        if (intent != null && intent.getBooleanExtra("wake", false)) deliverWake(intent.getStringExtra("wake_text"));
     }
 
     private void deliverWake(String text) {
         if (web == null) return;
-        final String safe = android.webkit.WebView.escapeHtml(text == null ? "سلام آریا" : text);
-        web.post(() -> web.evaluateJavascript("window.dispatchEvent(new CustomEvent('ariaWake',{detail:{text:'" + safe.replace("'", "\\'") + "'}}));", null));
+        try {
+            String safe = JSONObject.quote(text == null ? "سلام آریا" : text);
+            web.post(() -> web.evaluateJavascript("window.dispatchEvent(new CustomEvent('ariaWake',{detail:{text:" + safe + "}}));", null));
+        } catch (Exception ignored) {}
     }
 
     @Override protected void onNewIntent(Intent intent) {
