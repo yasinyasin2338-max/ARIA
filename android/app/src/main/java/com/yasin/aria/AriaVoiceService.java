@@ -7,6 +7,7 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -14,7 +15,16 @@ import android.os.IBinder;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
+import android.speech.tts.TextToSpeech;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Locale;
 
@@ -22,14 +32,34 @@ public class AriaVoiceService extends Service {
     private static final String CHANNEL_ID = "aria_voice";
     private static final int NOTIFICATION_ID = 7001;
     private static final String WAKE_ACTION = "com.yasin.aria.WAKE";
+    private static final String ARIA_URL = "https://aria-v4-production.up.railway.app/api/chat";
+
     private SpeechRecognizer recognizer;
+    private TextToSpeech tts;
     private final Handler handler = new Handler();
     private boolean running;
+    private boolean awaitingCommand;
+    private long lastWakeAt;
 
     @Override public void onCreate() {
         super.onCreate();
         createChannel();
-        startForeground(NOTIFICATION_ID, notification("آریا فعال است؛ آماده شنیدن «سلام آریا»"));
+        Notification n = notification("آریا فعال است؛ آماده شنیدن «سلام آریا»");
+        if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+        } else {
+            startForeground(NOTIFICATION_ID, n);
+        }
+        tts = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                int r = tts.setLanguage(new Locale("fa", "IR"));
+                if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    tts.setLanguage(new Locale("fa"));
+                }
+                tts.setSpeechRate(1.05f);
+                tts.setPitch(1.0f);
+            }
+        });
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -38,6 +68,7 @@ public class AriaVoiceService extends Service {
             return START_NOT_STICKY;
         }
         running = true;
+        awaitingCommand = false;
         startListening();
         return START_STICKY;
     }
@@ -47,8 +78,8 @@ public class AriaVoiceService extends Service {
         if (recognizer != null) try { recognizer.destroy(); } catch (Exception ignored) {}
         recognizer = SpeechRecognizer.createSpeechRecognizer(this);
         recognizer.setRecognitionListener(new RecognitionListener() {
-            @Override public void onResults(Bundle results) { handle(results); restartSoon(); }
-            @Override public void onPartialResults(Bundle results) { handle(results); }
+            @Override public void onResults(Bundle results) { handleFinal(results); }
+            @Override public void onPartialResults(Bundle results) { }
             @Override public void onError(int error) { restartSoon(); }
             @Override public void onReadyForSpeech(Bundle p) {}
             @Override public void onBeginningOfSpeech() {}
@@ -61,31 +92,103 @@ public class AriaVoiceService extends Service {
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fa-IR");
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "fa-IR");
-        i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+        i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
         i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
         try { recognizer.startListening(i); } catch (Exception e) { restartSoon(); }
     }
 
-    private void handle(Bundle results) {
-        if (results == null) return;
+    private void handleFinal(Bundle results) {
+        if (results == null) { restartSoon(); return; }
         ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-        if (matches == null) return;
-        for (String raw : matches) {
-            String text = normalize(raw);
-            if (text.contains("سلام اریا") || text.contains("سلام آریا") || text.equals("اریا") || text.equals("آریا")) {
-                Intent wake = new Intent(WAKE_ACTION);
-                wake.setPackage(getPackageName());
-                wake.putExtra("text", raw);
-                sendBroadcast(wake);
-                showNotification("بله، یاسین؟");
-                Intent open = new Intent(this, MainActivity.class);
-                open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                open.putExtra("wake", true);
-                open.putExtra("wake_text", raw);
-                try { startActivity(open); } catch (Exception ignored) {}
-                break;
-            }
+        if (matches == null || matches.isEmpty()) { restartSoon(); return; }
+        String raw = matches.get(0);
+        String text = normalize(raw);
+
+        if (!awaitingCommand && isWake(text)) {
+            long now = System.currentTimeMillis();
+            if (now - lastWakeAt < 1800) { restartSoon(); return; }
+            lastWakeAt = now;
+            awaitingCommand = true;
+            sendWakeBroadcast(raw);
+            speak("بله یاسین، گوش می‌دم.", () -> restartListeningForCommand());
+            return;
         }
+
+        if (awaitingCommand) {
+            awaitingCommand = false;
+            if (!text.isEmpty()) {
+                askAria(text);
+            } else {
+                restartSoon();
+            }
+            return;
+        }
+        restartSoon();
+    }
+
+    private boolean isWake(String text) {
+        return text.contains("سلام اریا") || text.contains("سلام آریا") || text.equals("اریا") || text.equals("آریا") || text.contains("هی اریا");
+    }
+
+    private void sendWakeBroadcast(String raw) {
+        Intent wake = new Intent(WAKE_ACTION);
+        wake.setPackage(getPackageName());
+        wake.putExtra("text", raw);
+        sendBroadcast(wake);
+        showNotification("بله یاسین؟ منتظرم...");
+    }
+
+    private void restartListeningForCommand() {
+        if (!running) return;
+        handler.postDelayed(this::startListening, 120);
+    }
+
+    private void askAria(final String text) {
+        new Thread(() -> {
+            HttpURLConnection c = null;
+            try {
+                URL u = new URL(ARIA_URL);
+                c = (HttpURLConnection) u.openConnection();
+                c.setRequestMethod("POST");
+                c.setConnectTimeout(6000);
+                c.setReadTimeout(15000);
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                JSONObject body = new JSONObject();
+                body.put("message", text);
+                body.put("memory", "کاربر: یاسین\nرابط: ARIA Voice Service\nزبان: فارسی");
+                byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+                try (OutputStream out = c.getOutputStream()) { out.write(bytes); }
+                int code = c.getResponseCode();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(code >= 400 ? c.getErrorStream() : c.getInputStream(), StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                JSONObject response = new JSONObject(sb.toString());
+                String answer = response.optString("text", "");
+                if (answer.isEmpty()) answer = response.optString("error", "پاسخی دریافت نشد.");
+                final String spoken = answer;
+                handler.post(() -> speak(spoken, this::restartSoon));
+            } catch (Exception e) {
+                handler.post(() -> speak("اتصال به آریا برقرار نشد.", this::restartSoon));
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }).start();
+    }
+
+    private void speak(String text, Runnable after) {
+        if (!running) return;
+        if (tts == null) { if (after != null) after.run(); return; }
+        String safe = text == null ? "" : text.trim();
+        if (safe.length() > 1200) safe = safe.substring(0, 1200);
+        final String utterance = safe;
+        tts.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
+            @Override public void onStart(String id) {}
+            @Override public void onDone(String id) { if (after != null) handler.post(after); }
+            @Override public void onError(String id) { if (after != null) handler.post(after); }
+        });
+        tts.speak(utterance, TextToSpeech.QUEUE_FLUSH, null, "aria-" + System.currentTimeMillis());
     }
 
     private String normalize(String s) {
@@ -133,6 +236,7 @@ public class AriaVoiceService extends Service {
         running = false;
         handler.removeCallbacksAndMessages(null);
         if (recognizer != null) { try { recognizer.cancel(); } catch (Exception ignored) {} recognizer.destroy(); recognizer = null; }
+        if (tts != null) { try { tts.stop(); } catch (Exception ignored) {} tts.shutdown(); tts = null; }
         super.onDestroy();
     }
 
