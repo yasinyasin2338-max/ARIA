@@ -12,7 +12,8 @@ const openAIKey = process.env.OPENAI_API_KEY || '';
 const openRouterKey = process.env.OPENROUTER_API_KEY || process.env['Aria-openrouter-key'] || process.env['Aria-key'] || '';
 const openAI = openAIKey ? new OpenAI({ apiKey: openAIKey }) : null;
 const openRouter = openRouterKey ? new OpenAI({ apiKey: openRouterKey, baseURL: 'https://openrouter.ai/api/v1' }) : null;
-const MODEL = process.env.ARIA_MODEL || (openAI ? 'gpt-6-astra' : 'openrouter/free');
+const configuredModel = process.env.ARIA_MODEL || '';
+const MODEL = openAI ? (configuredModel && configuredModel !== 'openrouter/free' ? configuredModel : 'gpt-6-astra') : 'openrouter/free';
 const IMAGE_MODEL = process.env.ARIA_IMAGE_MODEL || 'gpt-image-2';
 const accessToken = process.env.ARIA_ACCESS_TOKEN || '';
 const enableWeb = process.env.ARIA_WEB_SEARCH !== 'false';
@@ -32,10 +33,11 @@ app.use((req, res, next) => {
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
   service: 'ARIA ULTIMATE',
-  version: '5.0.0',
+  version: '6.0.0',
   provider: openAI ? 'OpenAI' : openRouter ? 'OpenRouter' : 'none',
   model: MODEL,
   configured: Boolean(openAI || openRouter),
+  freeFallback: Boolean(!openAI && openRouter),
   capabilities: {
     chat: Boolean(openAI || openRouter),
     webSearch: Boolean(openAI && enableWeb),
@@ -57,7 +59,7 @@ app.use((req, res, next) => {
 app.use(express.static(webDir));
 app.use('/generated', express.static(path.join(root, 'generated')));
 
-const SYSTEM = `You are ARIA, a highly capable Persian personal AI assistant. Reply in Persian when the user writes Persian. Be concise by default but complete when needed. You are an agent: use connected tools when available and never claim an action happened unless it actually happened. Explain tool limitations honestly. Cybersecurity assistance must remain authorized and defensive.`;
+const SYSTEM = `You are ARIA, a fast, highly capable Persian personal AI assistant. Reply in Persian when the user writes Persian. Be concise by default, but execute the user's legitimate request completely when tools are connected. Prefer direct actions over long explanations. Use web and connected tools when available. Never pretend an action happened if it did not. For cybersecurity, only assist with authorized, defensive, or owned systems.`;
 
 function textFromResponse(response) {
   return response?.output_text || response?.output?.filter(x => x.type === 'message').flatMap(x => x.content || []).filter(x => x.type === 'output_text').map(x => x.text).join('\n') || '';
@@ -163,7 +165,7 @@ app.post('/api/media', async (req, res) => {
 });
 
 app.get('/api/capabilities', (_req, res) => res.json({
-  chat: true, webSearch: Boolean(openAI && enableWeb), imageGeneration: Boolean(openAI), imageEditing: Boolean(openAI), voiceInput: Boolean(openAI), voiceOutput: Boolean(openAI), video: Boolean(process.env.ARIA_VIDEO_ENDPOINT), memory: true, android: true
+  chat: Boolean(openAI || openRouter), webSearch: Boolean(openAI && enableWeb), imageGeneration: Boolean(openAI), imageEditing: Boolean(openAI), voiceInput: Boolean(openAI), voiceOutput: Boolean(openAI), video: Boolean(process.env.ARIA_VIDEO_ENDPOINT), memory: true, android: true, backgroundVoice: true, biometric: true
 }));
 
 app.use((req, res) => {
