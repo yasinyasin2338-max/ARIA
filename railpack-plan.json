@@ -1,0 +1,5 @@
+{
+  "install": "npm install --omit=dev",
+  "build": "",
+  "start": "node index.js"
+}
