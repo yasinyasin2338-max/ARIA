@@ -9,10 +9,15 @@ const app = express();
 const port = Number(process.env.PORT) || 10000;
 const root = process.cwd();
 const webDir = await fs.access(path.join(root, 'web')).then(() => path.join(root, 'web')).catch(() => root);
-const apiKey = process.env.OPENAI_API_KEY || process.env['Aria-key'] || '';
-const client = apiKey ? new OpenAI({ apiKey }) : null;
-const MODEL = process.env.ARIA_MODEL || 'gpt-5';
-const IMAGE = process.env.ARIA_IMAGE_MODEL || 'gpt-image-1';
+
+// ARIA uses OpenRouter's zero-cost model router for text by default.
+// OpenAI is kept only as an optional legacy media provider; chat never depends on it.
+const openRouterKey = process.env.OPENROUTER_API_KEY || process.env['Aria-openrouter-key'] || '';
+const openRouter = openRouterKey ? new OpenAI({
+  apiKey: openRouterKey,
+  baseURL: 'https://openrouter.ai/api/v1'
+}) : null;
+const MODEL = process.env.ARIA_MODEL || 'openrouter/free';
 const accessToken = process.env.ARIA_ACCESS_TOKEN || '';
 
 app.set('trust proxy', 1);
@@ -30,10 +35,10 @@ app.use((req, res, next) => {
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
   service: 'ARIA ULTIMATE',
-  version: '2.3.0',
+  version: '3.0.0-free',
+  provider: 'OpenRouter',
   model: MODEL,
-  image: IMAGE,
-  configured: Boolean(apiKey)
+  configured: Boolean(openRouterKey)
 }));
 
 app.use((req, res, next) => {
@@ -48,23 +53,36 @@ app.use('/generated', express.static(path.join(root, 'generated')));
 
 app.post('/api/chat', async (req, res) => {
   try {
-    if (!client) return res.status(503).json({ error: 'OpenAI API key is not configured.' });
+    if (!openRouter) return res.status(503).json({ error: 'OpenRouter API key is not configured.' });
     const body = req.body || {};
     const message = body.message || body.messages?.at(-1)?.content;
     const memory = typeof body.memory === 'string' ? body.memory : '';
     if (!message) return res.status(400).json({ error: 'message required' });
-    const input = `Memory:\n${memory.slice(-12000)}\n\nUser:\n${String(message)}`;
-    const response = await client.responses.create({
+
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are ARIA, a capable Persian personal assistant. Reply in Persian when the user writes Persian. Be helpful and concise by default. Only assist cybersecurity work when it is authorized and defensive. Never claim to have performed an action unless it was actually performed.'
+      },
+      {
+        role: 'user',
+        content: `Memory:\n${memory.slice(-12000)}\n\nUser:\n${String(message)}`
+      }
+    ];
+
+    const response = await openRouter.chat.completions.create({
       model: MODEL,
-      instructions: 'You are ARIA, a capable Persian personal assistant. Be helpful and concise by default. Only assist cybersecurity work when it is authorized and defensive. Never claim to have performed an action unless it was actually performed.',
-      input
+      messages
     });
-    res.json({ text: response.output_text || '' });
+
+    res.json({ text: response.choices?.[0]?.message?.content || '' });
   } catch (error) {
-    res.status(500).json({ error: error?.message || 'Chat failed' });
+    const status = error?.status || 500;
+    res.status(status).json({ error: error?.message || 'Chat failed' });
   }
 });
 
+// Optional media endpoint. Text chat remains free; image/video providers are configured separately.
 async function saveDataUrl(data) {
   const match = String(data || '').match(/^data:([^;]+);base64,(.+)$/);
   if (!match) throw new Error('invalid image');
@@ -78,8 +96,7 @@ async function saveDataUrl(data) {
 
 async function mediaHandler(req, res) {
   try {
-    if (!client) return res.status(503).json({ error: 'OpenAI API key is not configured.' });
-    const { prompt = '', mode = 'image', image, size = '1024x1024' } = req.body || {};
+    const { prompt = '', mode = 'image', image } = req.body || {};
     if (!prompt && mode !== 'edit' && !image) return res.status(400).json({ error: 'prompt required' });
 
     if (mode === 'video' || mode === 'i2v') {
@@ -95,24 +112,7 @@ async function mediaHandler(req, res) {
       return res.status(response.status).json(data);
     }
 
-    let result;
-    if (mode === 'edit' || image) {
-      const file = await saveDataUrl(image);
-      result = await client.images.edit({ model: IMAGE, image: createReadStream(file), prompt, size, n: 1 });
-    } else {
-      result = await client.images.generate({ model: IMAGE, prompt, size, n: 1 });
-    }
-
-    const b64 = result.data?.[0]?.b64_json;
-    const remoteUrl = result.data?.[0]?.url;
-    if (!b64 && !remoteUrl) throw new Error('No image output');
-    if (remoteUrl) return res.json({ kind: 'image', url: remoteUrl, image: remoteUrl });
-
-    const dir = path.join(root, 'generated');
-    await fs.mkdir(dir, { recursive: true });
-    const out = `${crypto.randomUUID()}.png`;
-    await fs.writeFile(path.join(dir, out), Buffer.from(b64, 'base64'));
-    res.json({ kind: 'image', url: `/generated/${out}`, image: `/generated/${out}` });
+    return res.status(501).json({ error: 'Image generation is not connected to a free provider yet.' });
   } catch (error) {
     res.status(500).json({ error: error?.message || 'Media request failed' });
   }
