@@ -10,3 +10,6 @@ Run `npm install` then `npm start` in `ARIA_SERVER`. Copy `.env.example` to `.en
 Video is provider-agnostic: set `ARIA_VIDEO_ENDPOINT` and `ARIA_VIDEO_TOKEN` for a compatible video service. No app can honestly provide unlimited generation without a real provider and its quotas.
 
 Cybersecurity features are intended for authorized/defensive testing only.
+
+## Production
+The production backend is connected to Railway service `aria-v4` and tracks the `main` branch.
