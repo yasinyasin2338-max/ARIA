@@ -75,9 +75,7 @@ public class MainActivity extends Activity {
                     .setNegativeButton("بعداً", getMainExecutor(), (dialog, which) -> {})
                     .build();
             Executor executor = getMainExecutor();
-            prompt.authenticate(new android.os.CancellationSignal(), executor, new BiometricPrompt.AuthenticationCallback() {
-                @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) { deliverWake("ARIA آماده است"); }
-            });
+            prompt.authenticate(new android.os.CancellationSignal(), executor, new BiometricPrompt.AuthenticationCallback() {});
         } catch (Exception ignored) {}
     }
 
