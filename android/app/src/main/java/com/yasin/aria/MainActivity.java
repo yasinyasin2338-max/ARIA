@@ -33,7 +33,7 @@ public class MainActivity extends Activity {
         setupWebView();
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(wakeReceiver, new IntentFilter(WAKE_ACTION), Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(wakeReceiver, new IntentFilter(WAKE_ACTION));
-        startVoiceService();
+        startVoiceServiceIfAllowed();
         if (Build.VERSION.SDK_INT >= 28) authenticateBiometric();
         handleWakeIntent(getIntent());
     }
@@ -43,6 +43,11 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10);
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 11);
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 10 && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) startVoiceServiceIfAllowed();
     }
 
     private void setupWebView() {
@@ -61,9 +66,12 @@ public class MainActivity extends Activity {
         setContentView(web);
     }
 
-    private void startVoiceService() {
-        if (Build.VERSION.SDK_INT >= 26) startForegroundService(new Intent(this, AriaVoiceService.class));
-        else startService(new Intent(this, AriaVoiceService.class));
+    private void startVoiceServiceIfAllowed() {
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(new Intent(this, AriaVoiceService.class));
+            else startService(new Intent(this, AriaVoiceService.class));
+        } catch (Exception ignored) {}
     }
 
     private void authenticateBiometric() {
