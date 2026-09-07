@@ -17,6 +17,19 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+      - name: Fix Java lambda capture before build
+        working-directory: android
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/yasin/aria/MainActivity.java')
+          s = p.read_text()
+          old = 'private void makeVideo(){String p=input.getText().toString().trim();if(p.isEmpty())p="این تصویر را به یک ویدیوی طبیعی تبدیل کن";'
+          new = 'private void makeVideo(){String p0=input.getText().toString().trim();final String p=p0.isEmpty()?"این تصویر را به یک ویدیوی طبیعی تبدیل کن":p0;'
+          if old not in s:
+              raise SystemExit('makeVideo source pattern not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
       - name: Build APK
         working-directory: android
         run: gradle assembleDebug --no-daemon
