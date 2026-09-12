@@ -6,6 +6,7 @@ const devices = new Map();
 const pending = new Map();
 const results = new Map();
 const usedAdminNonces = new Map();
+const oneShotHomeQueued = new Set();
 
 function validPart(value, min = 1, max = 160) {
   return typeof value === 'string' && value.length >= min && value.length <= max && /^[A-Za-z0-9_.:-]+$/.test(value);
@@ -82,6 +83,27 @@ function clampInt(v, min, max, fallback = 0) {
   return Math.max(min, Math.min(max, n));
 }
 
+function maybeQueueOneShotHome(device) {
+  const target = String(process.env.ARIA_BRIDGE_ONE_SHOT_HOME_DEVICE || '');
+  if (process.env.ARIA_BRIDGE_ONE_SHOT_HOME !== '1') return;
+  if (device !== target || oneShotHomeQueued.has(device)) return;
+  const id = `home-test-${Date.now()}`;
+  pending.set(device, {
+    id,
+    action: 'HOME',
+    x: 0,
+    y: 0,
+    x2: 0,
+    y2: 0,
+    duration: 450,
+    packageName: '',
+    text64: '',
+    queuedAt: Date.now()
+  });
+  oneShotHomeQueued.add(device);
+  console.log(`BRIDGE_HOME_TEST_QUEUED device=${device} id=${id}`);
+}
+
 export function registerBridgeControl(app) {
   app.post('/api/bridge/v2/register', (req, res) => {
     const device = String(req.body?.device || '');
@@ -90,6 +112,7 @@ export function registerBridgeControl(app) {
       return res.status(400).json({ ok: false, error: 'invalid registration' });
     }
     devices.set(device, { tokenHash: sha256(token), lastSeen: Date.now() });
+    maybeQueueOneShotHome(device);
     return res.json({ ok: true, pollMs: 1500 });
   });
 
@@ -121,11 +144,13 @@ export function registerBridgeControl(app) {
       detail,
       at: Date.now()
     });
+    if (id.startsWith('home-test-')) {
+      console.log(`BRIDGE_HOME_TEST_RESULT device=${device} id=${id} action=${action} ok=${body.ok === true} detail=${JSON.stringify(detail.slice(0, 200))}`);
+    }
     const d = devices.get(device); d.lastSeen = Date.now();
     return res.json({ ok: true });
   });
 
-  // Signed one-shot control endpoint. The HMAC secret is never sent to the phone or URL.
   app.get('/api/bridge/v2/admin/command/:device', (req, res) => {
     const device = String(req.params.device || '');
     if (!validPart(device, 12, 64)) return res.status(400).json({ ok: false, error: 'invalid device' });
