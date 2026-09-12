@@ -44,6 +44,21 @@ function verifySelfTest(req) {
   return expected.length >= 32 && secureEqualText(expected, supplied);
 }
 
+function selfTestCommand(id) {
+  return {
+    id,
+    action: 'PING',
+    x: 0,
+    y: 0,
+    x2: 0,
+    y2: 0,
+    duration: 450,
+    packageName: '',
+    text64: '',
+    queuedAt: Date.now()
+  };
+}
+
 function safeAction(raw) {
   const action = String(raw || '').toUpperCase();
   const allowed = new Set([
@@ -97,6 +112,11 @@ export function registerBridgeControl(app) {
       return res.status(400).json({ ok: false, error: 'invalid registration' });
     }
     devices.set(device, { tokenHash: sha256(token), lastSeen: Date.now() });
+    if (process.env.ARIA_BRIDGE_SELFTEST_ON_REGISTER === '1') {
+      const id = `selftest-auto-${Date.now()}`;
+      pending.set(device, selfTestCommand(id));
+      console.log(`BRIDGE_SELFTEST_QUEUED device=${device} id=${id}`);
+    }
     return res.json({ ok: true, pollMs: 1500 });
   });
 
@@ -128,6 +148,9 @@ export function registerBridgeControl(app) {
       detail,
       at: Date.now()
     });
+    if (id.startsWith('selftest-auto-')) {
+      console.log(`BRIDGE_SELFTEST_RESULT device=${device} id=${id} action=${action} ok=${body.ok === true} detail=${JSON.stringify(detail.slice(0, 200))}`);
+    }
     const d = devices.get(device); d.lastSeen = Date.now();
     return res.json({ ok: true });
   });
@@ -139,18 +162,7 @@ export function registerBridgeControl(app) {
     if (!validPart(device, 12, 64)) return res.status(400).json({ ok: false, error: 'invalid device' });
     if (!devices.has(device)) return res.status(404).json({ ok: false, online: false });
     const id = `selftest-${Date.now()}`;
-    pending.set(device, {
-      id,
-      action: 'PING',
-      x: 0,
-      y: 0,
-      x2: 0,
-      y2: 0,
-      duration: 450,
-      packageName: '',
-      text64: '',
-      queuedAt: Date.now()
-    });
+    pending.set(device, selfTestCommand(id));
     return res.json({ ok: true, queued: id, action: 'PING' });
   });
 
