@@ -1,3 +1,5 @@
+import { registerBridgeControl } from './bridge-control.js';
+
 const MAX_AGE_MS = 10 * 60 * 1000;
 const results = new Map();
 const beacons = new Map();
@@ -11,6 +13,9 @@ function validPart(value, max = 160) {
 }
 
 export function registerBridgeResults(app) {
+  // V2 direct relay: authenticated phone polling + signed one-shot admin control.
+  registerBridgeControl(app);
+
   app.post('/api/bridge/result/:token', (req, res) => {
     const token = req.params.token;
     if (!validToken(token)) return res.status(400).json({ error: 'invalid token' });
@@ -36,8 +41,7 @@ export function registerBridgeResults(app) {
     res.json({ pending: false, ...result });
   });
 
-  // Lightweight status beacons from the Android foreground bridge.
-  // No screen content, credentials, audio, or arbitrary payloads are accepted here.
+  // Legacy lightweight beacons kept for older installed APKs during migration.
   app.get('/api/bridge/beacon/:kind/:device/*detail', (req, res) => {
     const kind = req.params.kind;
     const device = req.params.device;
