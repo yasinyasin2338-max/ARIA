@@ -1,0 +1,56 @@
+name: ARIA Server Smoke Test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Health endpoint
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 3 --max-time 20 \
+            https://aria-server-new-production.up.railway.app/api/health \
+            -o /tmp/health.json
+          python - <<'PY'
+          import json
+          j=json.load(open('/tmp/health.json'))
+          assert j.get('ok') is True, j
+          print('health ok:', j)
+          PY
+
+      - name: Persian chat endpoint
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 2 --max-time 70 \
+            -H 'Content-Type: application/json' \
+            -d '{"message":"سلام. برای تست اتصال فقط یک پاسخ خیلی کوتاه فارسی بده."}' \
+            https://aria-server-new-production.up.railway.app/api/chat \
+            -o /tmp/chat.json
+          python - <<'PY'
+          import json
+          j=json.load(open('/tmp/chat.json'))
+          text=str(j.get('text','')).strip()
+          assert text, j
+          print('chat provider:', j.get('provider'))
+          print('chat text length:', len(text))
+          PY
+
+      - name: Persian neural TTS endpoint
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 2 --max-time 70 \
+            -D /tmp/tts.headers \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: audio/mpeg' \
+            -d '{"text":"سلام، این یک تست صدای فارسی آریس است.","voice":"male","rate":"-4%","pitch":"-1Hz"}' \
+            https://aria-server-new-production.up.railway.app/api/tts \
+            -o /tmp/tts.mp3
+          grep -qi '^content-type: audio/' /tmp/tts.headers
+          bytes=$(stat -c%s /tmp/tts.mp3)
+          echo "tts bytes=$bytes"
+          test "$bytes" -gt 512
