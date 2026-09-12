@@ -1,0 +1,22 @@
+name: Probe Persian TTS Space
+
+on:
+  push:
+    paths:
+      - '.github/workflows/probe-persian-tts-space.yml'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install Gradio client
+        run: python -m pip install -q --upgrade gradio_client
+      - name: Inspect Pocket TTS Farsi API
+        run: |
+          python - <<'PY'
+          from gradio_client import Client
+          client = Client('hugging-apps/pocket-tts-farsi-demo')
+          print(client.view_api(return_format='dict'))
+          PY
