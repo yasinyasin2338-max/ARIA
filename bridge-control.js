@@ -20,11 +20,6 @@ function secureEqualHex(a, b) {
   try { return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex')); } catch { return false; }
 }
 
-function secureEqualText(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
-  try { return crypto.timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8')); } catch { return false; }
-}
-
 function bearer(req) {
   const h = String(req.headers.authorization || '');
   return h.startsWith('Bearer ') ? h.slice(7) : '';
@@ -38,33 +33,16 @@ function authenticatedDevice(req, device) {
   return secureEqualHex(d.tokenHash, sha256(token));
 }
 
-function verifySelfTest(req) {
-  const expected = String(process.env.ARIA_BRIDGE_TEST_SECRET || '');
-  const supplied = String(req.query?.token || '');
-  return expected.length >= 32 && secureEqualText(expected, supplied);
-}
-
-function selfTestCommand(id) {
-  return {
-    id,
-    action: 'PING',
-    x: 0,
-    y: 0,
-    x2: 0,
-    y2: 0,
-    duration: 450,
-    packageName: '',
-    text64: '',
-    queuedAt: Date.now()
-  };
-}
-
 function safeAction(raw) {
   const action = String(raw || '').toUpperCase();
   const allowed = new Set([
-    'PING','HOME','BACK','RECENTS','NOTIFICATIONS',
-    'TAP','SWIPE','GET_UI','TYPE_TEXT','CLICK_TEXT',
-    'SCROLL_FORWARD','SCROLL_BACKWARD','OPEN_APP'
+    'PING','HOME','BACK','RECENTS','NOTIFICATIONS','QUICK_SETTINGS',
+    'TAP','SWIPE','GET_UI','GET_FOREGROUND_APP','GET_NOTIFICATIONS',
+    'TYPE_TEXT','CLEAR_TEXT','CLICK_TEXT','SCROLL_FORWARD','SCROLL_BACKWARD','OPEN_APP',
+    'OPEN_SETTINGS','OPEN_WIFI_SETTINGS','OPEN_BLUETOOTH_SETTINGS','OPEN_DISPLAY_SETTINGS',
+    'OPEN_SOUND_SETTINGS','OPEN_APPS_SETTINGS','OPEN_NOTIFICATION_SETTINGS',
+    'VOLUME_UP','VOLUME_DOWN','VOLUME_MUTE','VOLUME_UNMUTE',
+    'MEDIA_PLAY_PAUSE','MEDIA_NEXT','MEDIA_PREVIOUS','MEDIA_STOP'
   ]);
   return allowed.has(action) ? action : '';
 }
@@ -112,11 +90,6 @@ export function registerBridgeControl(app) {
       return res.status(400).json({ ok: false, error: 'invalid registration' });
     }
     devices.set(device, { tokenHash: sha256(token), lastSeen: Date.now() });
-    if (process.env.ARIA_BRIDGE_SELFTEST_ON_REGISTER === '1') {
-      const id = `selftest-auto-${Date.now()}`;
-      pending.set(device, selfTestCommand(id));
-      console.log(`BRIDGE_SELFTEST_QUEUED device=${device} id=${id}`);
-    }
     return res.json({ ok: true, pollMs: 1500 });
   });
 
@@ -148,34 +121,8 @@ export function registerBridgeControl(app) {
       detail,
       at: Date.now()
     });
-    if (id.startsWith('selftest-auto-')) {
-      console.log(`BRIDGE_SELFTEST_RESULT device=${device} id=${id} action=${action} ok=${body.ok === true} detail=${JSON.stringify(detail.slice(0, 200))}`);
-    }
     const d = devices.get(device); d.lastSeen = Date.now();
     return res.json({ ok: true });
-  });
-
-  // Gated one-shot live verification. Disabled unless ARIA_BRIDGE_TEST_SECRET is set.
-  app.get('/api/bridge/v2/test/ping/:device', (req, res) => {
-    const device = String(req.params.device || '');
-    if (!verifySelfTest(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
-    if (!validPart(device, 12, 64)) return res.status(400).json({ ok: false, error: 'invalid device' });
-    if (!devices.has(device)) return res.status(404).json({ ok: false, online: false });
-    const id = `selftest-${Date.now()}`;
-    pending.set(device, selfTestCommand(id));
-    return res.json({ ok: true, queued: id, action: 'PING' });
-  });
-
-  app.get('/api/bridge/v2/test/result/:device', (req, res) => {
-    const device = String(req.params.device || '');
-    if (!verifySelfTest(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
-    if (!validPart(device, 12, 64)) return res.status(400).json({ ok: false, error: 'invalid device' });
-    const expectedId = String(req.query?.id || '');
-    const result = results.get(device);
-    if (!result || !expectedId || result.id !== expectedId) {
-      return res.status(202).json({ ok: false, pending: true });
-    }
-    return res.json({ ok: true, pending: false, result });
   });
 
   // Signed one-shot control endpoint. The HMAC secret is never sent to the phone or URL.
