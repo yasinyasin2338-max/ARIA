@@ -20,6 +20,11 @@ function secureEqualHex(a, b) {
   try { return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex')); } catch { return false; }
 }
 
+function secureEqualText(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8')); } catch { return false; }
+}
+
 function bearer(req) {
   const h = String(req.headers.authorization || '');
   return h.startsWith('Bearer ') ? h.slice(7) : '';
@@ -31,6 +36,12 @@ function authenticatedDevice(req, device) {
   const token = bearer(req);
   if (!token) return false;
   return secureEqualHex(d.tokenHash, sha256(token));
+}
+
+function verifySelfTest(req) {
+  const expected = String(process.env.ARIA_BRIDGE_TEST_SECRET || '');
+  const supplied = String(req.query?.token || '');
+  return expected.length >= 32 && secureEqualText(expected, supplied);
 }
 
 function safeAction(raw) {
@@ -119,6 +130,40 @@ export function registerBridgeControl(app) {
     });
     const d = devices.get(device); d.lastSeen = Date.now();
     return res.json({ ok: true });
+  });
+
+  // Gated one-shot live verification. Disabled unless ARIA_BRIDGE_TEST_SECRET is set.
+  app.get('/api/bridge/v2/test/ping/:device', (req, res) => {
+    const device = String(req.params.device || '');
+    if (!verifySelfTest(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+    if (!validPart(device, 12, 64)) return res.status(400).json({ ok: false, error: 'invalid device' });
+    if (!devices.has(device)) return res.status(404).json({ ok: false, online: false });
+    const id = `selftest-${Date.now()}`;
+    pending.set(device, {
+      id,
+      action: 'PING',
+      x: 0,
+      y: 0,
+      x2: 0,
+      y2: 0,
+      duration: 450,
+      packageName: '',
+      text64: '',
+      queuedAt: Date.now()
+    });
+    return res.json({ ok: true, queued: id, action: 'PING' });
+  });
+
+  app.get('/api/bridge/v2/test/result/:device', (req, res) => {
+    const device = String(req.params.device || '');
+    if (!verifySelfTest(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+    if (!validPart(device, 12, 64)) return res.status(400).json({ ok: false, error: 'invalid device' });
+    const expectedId = String(req.query?.id || '');
+    const result = results.get(device);
+    if (!result || !expectedId || result.id !== expectedId) {
+      return res.status(202).json({ ok: false, pending: true });
+    }
+    return res.json({ ok: true, pending: false, result });
   });
 
   // Signed one-shot control endpoint. The HMAC secret is never sent to the phone or URL.
