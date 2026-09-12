@@ -17,10 +17,11 @@ jobs:
         run: |
           python - <<'PY'
           import os
-          from gradio_client import Client
+          from gradio_client import Client, handle_file
           client = Client('hugging-apps/pocket-tts-farsi-demo')
           result = client.predict(
               text='سلام یاسین، من آریس هستم. صدای فارسی جدید آماده‌ی آزمایش است.',
+              voice_audio=handle_file('https://huggingface.co/mehdi-hf/pocket-tts-farsi/resolve/main/example_voice.wav'),
               temperature=0.3,
               eos_threshold=-2.0,
               max_tokens=25,
