@@ -2,6 +2,7 @@ import express from 'express';
 import OpenAI from 'openai';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { registerBridgeResults } from './bridge-results.js';
 
 const app=express();
 const port=Number(process.env.PORT)||10000;
@@ -19,6 +20,7 @@ const SYSTEM=`You are ARIA, a highly capable Persian personal AI assistant. Repl
 app.disable('x-powered-by');app.use(express.json({limit:'50mb'}));
 app.use((req,res,next)=>{res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');if(req.method==='OPTIONS')return res.sendStatus(204);next()});
 app.get('/api/health',(_q,res)=>res.json({ok:true,service:'ARIA ULTIMATE',version:'7.0-free',provider:openAI?'OpenAI':openRouter?'OpenRouter+AI Horde':'AI Horde',freeMode:!openAI,capabilities:{chat:true,webSearch:true,imageGeneration:true,imageEditing:true,voiceInput:true,voiceOutput:true,video:Boolean(process.env.ARIA_VIDEO_ENDPOINT),memory:true,android:true}}));
+registerBridgeResults(app);
 app.use((req,res,next)=>{if(accessToken&&req.path!='/api/health'&&req.headers.authorization!==`Bearer ${accessToken}`)return res.status(401).json({error:'Unauthorized'});next()});
 app.use(express.static(webDir));
 app.use('/generated',express.static(path.join(root,'generated')));
