@@ -1,4 +1,4 @@
-import { generateSpeech } from '@bestcodes/edge-tts';
+import { generateSpeech } from '@bestcodes/edge-tts/dist/index.mjs';
 
 const VOICES = {
   male: 'fa-IR-FaridNeural',
