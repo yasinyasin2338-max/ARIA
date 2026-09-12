@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from scipy.io import wavfile
 from pocket_tts import TTSModel
 
-app = FastAPI(title="ARIA Persian TTS", version="1.0")
+app = FastAPI(title="ARIA Persian TTS", version="1.1")
 
 _model: Optional[TTSModel] = None
 _voice_state = None
@@ -38,12 +38,10 @@ def normalize_fa(text: str) -> str:
     }))
     text = re.sub(r"[`*_#>|~]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
-    return text[:1800]
+    return text[:1600]
 
 
 def chunk_text(text: str) -> list[str]:
-    # Pocket-TTS Farsi is most stable on short utterances. Keep each piece
-    # around conversational sentence length and split long clauses by words.
     pieces = [p.strip() for p in re.split(r"(?<=[.!؟?؛;،,])\s+", text) if p.strip()]
     if not pieces:
         pieces = [text]
@@ -51,11 +49,11 @@ def chunk_text(text: str) -> list[str]:
     out: list[str] = []
     for piece in pieces:
         words = piece.split()
-        if len(words) <= 14:
+        if len(words) <= 12:
             out.append(piece)
             continue
-        for i in range(0, len(words), 12):
-            part = " ".join(words[i:i + 12]).strip()
+        for i in range(0, len(words), 10):
+            part = " ".join(words[i:i + 10]).strip()
             if part:
                 out.append(part)
     return out[:40]
@@ -70,28 +68,23 @@ def ensure_model() -> tuple[TTSModel, object]:
         if _model is not None and _voice_state is not None:
             return _model, _voice_state
         try:
-            model = TTSModel.load_model(config=CONFIG, temp=0.3, eos_threshold=-2.0)
-            state = model.get_state_for_audio_prompt(VOICE)
+            print("Loading quantized ARIA Persian Pocket TTS…", flush=True)
+            model = TTSModel.load_model(
+                config=CONFIG,
+                temp=0.3,
+                eos_threshold=-2.0,
+                quantize=True,
+            )
+            state = model.get_state_for_audio_prompt(VOICE, truncate=True)
             _model = model
             _voice_state = state
             _model_error = None
+            print("ARIA Persian Pocket TTS quantized model ready", flush=True)
             return model, state
         except Exception as exc:
             _model_error = f"{type(exc).__name__}: {exc}"
+            print(f"ARIA Persian Pocket TTS load failed: {_model_error}", flush=True)
             raise
-
-
-def warm_model() -> None:
-    try:
-        ensure_model()
-        print("ARIA Persian Pocket TTS model ready", flush=True)
-    except Exception as exc:
-        print(f"ARIA Persian Pocket TTS warmup failed: {exc}", flush=True)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    threading.Thread(target=warm_model, name="tts-warmup", daemon=True).start()
 
 
 @app.get("/health")
@@ -100,6 +93,7 @@ def health():
         "ok": True,
         "service": "ARIA Persian Pocket TTS",
         "model": "mehdi-hf/pocket-tts-farsi",
+        "quantized": True,
         "ready": _model is not None and _voice_state is not None,
         "modelError": _model_error,
     }
@@ -137,7 +131,7 @@ def synthesize(req: TtsRequest):
             media_type="audio/wav",
             headers={
                 "Cache-Control": "no-store",
-                "X-ARIA-TTS": "pocket-tts-farsi",
+                "X-ARIA-TTS": "pocket-tts-farsi-int8",
                 "X-ARIA-Sample-Rate": str(sample_rate),
             },
         )
