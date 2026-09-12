@@ -13,10 +13,33 @@ jobs:
     steps:
       - name: Install Gradio client
         run: python -m pip install -q --upgrade gradio_client
-      - name: Inspect Pocket TTS Farsi API
+      - name: Generate Persian audio
         run: |
           python - <<'PY'
+          import os
           from gradio_client import Client
           client = Client('hugging-apps/pocket-tts-farsi-demo')
-          print(client.view_api(return_format='dict'))
+          result = client.predict(
+              text='سلام یاسین، من آریس هستم. صدای فارسی جدید آماده‌ی آزمایش است.',
+              temperature=0.3,
+              eos_threshold=-2.0,
+              max_tokens=25,
+              voice_sec=5.0,
+              pause_sec=0.15,
+              do_normalize=True,
+              api_name='/synthesize',
+          )
+          print('result:', result)
+          path = result[0] if isinstance(result, (tuple, list)) else result
+          if hasattr(path, 'path'):
+              path = path.path
+          path = str(path)
+          print('audio path:', path)
+          assert os.path.exists(path), path
+          size = os.path.getsize(path)
+          print('audio bytes:', size)
+          assert size > 1024, size
+          with open(path, 'rb') as f:
+              head = f.read(16)
+          print('audio header:', head.hex())
           PY
