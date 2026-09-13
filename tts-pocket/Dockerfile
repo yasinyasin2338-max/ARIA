@@ -49,14 +49,33 @@ with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as tf:
     tf.extractall(root)
 PY
 
+COPY model-patch.tar.xz.b64 /tmp/model-patch.b64
+
+RUN python - <<'PY'
+import base64, hashlib, io, lzma, pathlib, tarfile
+payload = pathlib.Path('/tmp/model-patch.b64').read_text().strip()
+compressed = base64.b64decode(payload)
+expected = 'e31b8a97aa94de55e5b9f0a0e78592756b1419395504405194e12ac7e4172582'
+actual = hashlib.sha256(compressed).hexdigest()
+assert actual == expected, f'model patch checksum mismatch: {actual}'
+data = lzma.decompress(compressed)
+root = pathlib.Path('/app').resolve()
+with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as tf:
+    for member in tf.getmembers():
+        target = (root / member.name).resolve()
+        if target != root and root not in target.parents:
+            raise RuntimeError(f'unsafe model patch path: {member.name}')
+    tf.extractall(root)
+PY
+
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir '.[production]' \
-    && python -m py_compile /app/oauth_entry.py /app/app/core/oauth_server.py \
+    && python -m py_compile /app/oauth_entry.py /app/app/core/oauth_server.py /app/app/config.py /app/app/models/gateway.py \
     && groupadd --system hub \
     && useradd --system --gid hub --home /app hub \
     && mkdir -p /app/data \
     && chown -R hub:hub /app \
-    && rm -rf /tmp/runtime-parts /tmp/oauth-patch.b64
+    && rm -rf /tmp/runtime-parts /tmp/oauth-patch.b64 /tmp/model-patch.b64
 
 USER hub
 EXPOSE 8000
