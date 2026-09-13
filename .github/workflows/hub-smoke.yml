@@ -15,7 +15,7 @@ jobs:
       - name: Build staged Hub image
         run: docker build -t hub-oauth-test ./tts-pocket
 
-      - name: Run staged Hub OAuth and model gateway smoke tests
+      - name: Run staged Hub OAuth, model and connector-manager smoke tests
         shell: bash
         run: |
           set -euo pipefail
@@ -47,6 +47,10 @@ jobs:
           done
           curl -fsS http://127.0.0.1:18000/health >/tmp/health.json
           python ./tts-pocket/ci_oauth_smoke.py
+          python ./tts-pocket/ci_connector_smoke.py
+
+          test "$(curl -sS -o /tmp/oauth-app-manager.html -w '%{http_code}' http://127.0.0.1:18000/static/oauth-app-manager.html)" = "200"
+          grep -q 'تنظیم OAuth سرویس‌ها' /tmp/oauth-app-manager.html
 
           docker cp ./tts-pocket/ci_model_smoke.py hubtest:/tmp/ci_model_smoke.py
           docker exec hubtest python /tmp/ci_model_smoke.py
