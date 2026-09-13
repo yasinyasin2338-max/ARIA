@@ -87,9 +87,11 @@ with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as tf:
     tf.extractall(root)
 PY
 
+COPY secure_entrypoint.py /app/secure_entrypoint.py
+
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir '.[production]' \
-    && python -m py_compile /app/oauth_entry.py /app/connector_entry.py /app/app/core/oauth_server.py /app/app/config.py /app/app/models/gateway.py /app/app/connectors/oauth/service.py /app/app/container.py \
+    && python -m py_compile /app/oauth_entry.py /app/connector_entry.py /app/secure_entrypoint.py /app/app/core/oauth_server.py /app/app/config.py /app/app/models/gateway.py /app/app/connectors/oauth/service.py /app/app/container.py \
     && groupadd --system hub \
     && useradd --system --gid hub --home /app hub \
     && mkdir -p /app/data \
@@ -98,4 +100,4 @@ RUN python -m pip install --upgrade pip \
 
 USER hub
 EXPOSE 8000
-CMD ["sh", "-c", "uvicorn connector_entry:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["python", "/app/secure_entrypoint.py"]
