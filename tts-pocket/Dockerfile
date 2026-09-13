@@ -87,6 +87,21 @@ with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as tf:
     tf.extractall(root)
 PY
 
+RUN python - <<'PY'
+from pathlib import Path
+p = Path('/app/app/static/index.html')
+html = p.read_text()
+if 'data-hub-admin-links' not in html:
+    controls = '''
+      <button data-hub-admin-links onclick="location.href='/static/token-helper.html'">مدیریت Token</button>
+      <button onclick="location.href='/static/oauth-app-manager.html'">تنظیم OAuth سرویس‌ها</button>
+      <button class="secondary" onclick="fetch('/api/auth/logout',{method:'POST',credentials:'same-origin'}).then(()=>location.reload())">خروج</button>
+'''
+    html = html.replace('</nav>', controls + '</nav>', 1)
+html = html.replace('v0.7 — Live Deployment Readiness', 'v0.7.1 — Secure Compact Runtime')
+p.write_text(html)
+PY
+
 COPY secure_entrypoint.py /app/secure_entrypoint.py
 
 RUN python -m pip install --upgrade pip \
