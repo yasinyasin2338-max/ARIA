@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Hub Token Manager</title>
+  <style>
+    body{font-family:system-ui,-apple-system,sans-serif;background:#0b1020;color:#eef2ff;margin:0;padding:18px;line-height:1.7}
+    .card{max-width:720px;margin:0 auto 16px;background:#111827;border:1px solid #27324a;border-radius:16px;padding:18px}
+    input,button{font:inherit;border-radius:10px;padding:11px 12px;border:1px solid #334155;box-sizing:border-box}
+    input{width:100%;background:#0f172a;color:#fff;margin:6px 0}
+    button{background:#6366f1;color:white;border:0;margin:6px 4px;cursor:pointer}
+    button.secondary{background:#334155}.danger{background:#b91c1c}
+    pre{white-space:pre-wrap;word-break:break-all;background:#020617;padding:12px;border-radius:10px}
+    .muted{color:#94a3b8}.ok{color:#86efac}.err{color:#fca5a5}
+    a{color:#a5b4fc}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Universal AI Tool Hub — Token Manager</h2>
+    <p class="muted">برای اتصال MCP یا کلاینت‌های دیگر، بعد از ورود یک API Token بساز. Token فقط یک‌بار نمایش داده می‌شود.</p>
+    <div id="state">در حال بررسی...</div>
+  </div>
+
+  <div class="card" id="loginCard" hidden>
+    <h3>ورود</h3>
+    <input id="email" type="email" value="admin@hub.local" placeholder="Email" />
+    <input id="password" type="password" placeholder="Password" />
+    <button id="loginBtn">ورود</button>
+    <div id="loginOut"></div>
+  </div>
+
+  <div class="card" id="tokenCard" hidden>
+    <h3>ساخت API Token</h3>
+    <input id="tokenName" value="chatgpt-mcp" placeholder="نام Token" />
+    <input id="days" type="number" value="365" min="1" max="3650" placeholder="مدت اعتبار (روز)" />
+    <button id="createBtn">ساخت Token</button>
+    <button id="refreshBtn" class="secondary">بروزرسانی لیست</button>
+    <pre id="newToken" hidden></pre>
+    <div id="tokens"></div>
+  </div>
+
+  <div class="card">
+    <a href="/">بازگشت به Hub</a>
+  </div>
+  <script src="/static/token-helper.js"></script>
+</body>
+</html>
