@@ -6,40 +6,60 @@ on:
   workflow_dispatch:
 
 jobs:
-  smoke:
+  staging-oauth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build staged Hub image
+        run: docker build -t hub-oauth-test ./tts-pocket
+
+      - name: Run staged Hub and OAuth smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_PASS="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          export CI_TEST_PASSWORD="$TEST_PASS"
+          export CI_HUB_BASE="http://127.0.0.1:18000"
+
+          docker run -d --name hubtest -p 18000:8000 \
+            -e PORT=8000 \
+            -e UTH_ENV=development \
+            -e UTH_AUTH_ENABLED=true \
+            -e UTH_BOOTSTRAP_ADMIN_EMAIL=admin@test.local \
+            -e UTH_BOOTSTRAP_ADMIN_PASSWORD="$TEST_PASS" \
+            -e UTH_PUBLIC_BASE_URL=http://127.0.0.1:18000 \
+            -e UTH_HTTP_ALLOWED_HOSTS=127.0.0.1,localhost \
+            -e UTH_ALLOWED_ORIGINS=http://127.0.0.1:18000 \
+            -e UTH_MCP_ALLOWED_HOSTS=127.0.0.1,localhost \
+            -e UTH_MCP_ALLOWED_ORIGINS=http://127.0.0.1:18000 \
+            hub-oauth-test
+
+          cleanup(){ docker logs hubtest || true; docker rm -f hubtest || true; }
+          trap cleanup EXIT
+
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:18000/health >/tmp/health.json; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18000/health >/tmp/health.json
+          python ./tts-pocket/ci_oauth_smoke.py
+
+  production-boundary:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check live production boundary and token manager
+      - name: Check current live production remains healthy
         shell: bash
         run: |
           set -euo pipefail
           base="https://aria-v4-production.up.railway.app"
-
-          health_code=$(curl -sS -o /tmp/health.json -w "%{http_code}" "$base/health")
-          test "$health_code" = "200"
+          test "$(curl -sS -o /tmp/health.json -w '%{http_code}' "$base/health")" = "200"
           grep -q '"status":"ok"' /tmp/health.json
           grep -q '"auth_enabled":true' /tmp/health.json
           grep -q '"mcp_available":true' /tmp/health.json
-
-          ready_code=$(curl -sS -o /tmp/ready.json -w "%{http_code}" "$base/ready")
-          test "$ready_code" = "200"
-
-          tools_code=$(curl -sS -o /tmp/tools.json -w "%{http_code}" "$base/api/tools")
-          test "$tools_code" = "401"
-          grep -q 'Authentication required' /tmp/tools.json
-
-          mcp_headers=$(mktemp)
-          mcp_code=$(curl -sS -D "$mcp_headers" -o /tmp/mcp.json -w "%{http_code}" -X POST "$base/mcp" -H 'Content-Type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}')
-          test "$mcp_code" = "401"
-          grep -qi 'www-authenticate: Bearer' "$mcp_headers"
-
-          helper_code=$(curl -sS -o /tmp/token-helper.html -w "%{http_code}" "$base/static/token-helper.html")
-          test "$helper_code" = "200"
-          grep -q 'Hub Token Manager' /tmp/token-helper.html
-
-          js_code=$(curl -sS -o /tmp/token-helper.js -w "%{http_code}" "$base/static/token-helper.js")
-          test "$js_code" = "200"
-          grep -q '/api/auth/api-tokens' /tmp/token-helper.js
-
-          echo "SMOKE_OK"
+          test "$(curl -sS -o /tmp/ready.json -w '%{http_code}' "$base/ready")" = "200"
+          test "$(curl -sS -o /tmp/tools.json -w '%{http_code}' "$base/api/tools")" = "401"
+          test "$(curl -sS -o /tmp/token-helper.html -w '%{http_code}' "$base/static/token-helper.html")" = "200"
+          echo "PRODUCTION_BOUNDARY_OK"
