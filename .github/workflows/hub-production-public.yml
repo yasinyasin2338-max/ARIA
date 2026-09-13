@@ -1,0 +1,26 @@
+name: Hub Production Public UI Check
+
+on:
+  push:
+    branches: [hub-v071-full-stage]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify production setup wizard
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://aria-v4-production.up.railway.app"
+          test "$(curl -sS -o /tmp/ready.json -w '%{http_code}' "$base/ready")" = "200"
+          test "$(curl -sS -o /tmp/setup.html -w '%{http_code}' "$base/static/provider-setup.html")" = "200"
+          grep -q 'راهنمای اتصال سرویس‌ها' /tmp/setup.html
+          grep -q 'github.com/settings/applications/new' /tmp/setup.html
+          grep -q '/api/oauth/github/callback' /tmp/setup.html
+          grep -q '/api/oauth/google/callback' /tmp/setup.html
+          test "$(curl -sS -o /tmp/index.html -w '%{http_code}' "$base/")" = "200"
+          grep -q 'راهنمای اتصال سرویس‌ها' /tmp/index.html
+          echo PRODUCTION_SETUP_WIZARD_OK
