@@ -15,7 +15,7 @@ jobs:
       - name: Build staged Hub image
         run: docker build -t hub-oauth-test ./tts-pocket
 
-      - name: Run staged Hub and OAuth smoke test
+      - name: Run staged Hub OAuth and model gateway smoke tests
         shell: bash
         run: |
           set -euo pipefail
@@ -34,6 +34,8 @@ jobs:
             -e UTH_ALLOWED_ORIGINS=http://127.0.0.1:18000 \
             -e UTH_MCP_ALLOWED_HOSTS=127.0.0.1,localhost \
             -e UTH_MCP_ALLOWED_ORIGINS=http://127.0.0.1:18000 \
+            -e UTH_OPENROUTER_API_KEY=ci-placeholder-key \
+            -e UTH_OPENROUTER_MODEL=ci/test-model \
             hub-oauth-test
 
           cleanup(){ docker logs hubtest || true; docker rm -f hubtest || true; }
@@ -45,6 +47,9 @@ jobs:
           done
           curl -fsS http://127.0.0.1:18000/health >/tmp/health.json
           python ./tts-pocket/ci_oauth_smoke.py
+
+          docker cp ./tts-pocket/ci_model_smoke.py hubtest:/tmp/ci_model_smoke.py
+          docker exec hubtest python /tmp/ci_model_smoke.py
 
   production-boundary:
     runs-on: ubuntu-latest
