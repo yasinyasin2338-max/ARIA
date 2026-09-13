@@ -50,11 +50,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check current live production remains healthy
+      - name: Check live production health, auth and OAuth boundary
         shell: bash
         run: |
           set -euo pipefail
           base="https://aria-v4-production.up.railway.app"
+          resource="$base/mcp"
+
           test "$(curl -sS -o /tmp/health.json -w '%{http_code}' "$base/health")" = "200"
           grep -q '"status":"ok"' /tmp/health.json
           grep -q '"auth_enabled":true' /tmp/health.json
@@ -62,4 +64,21 @@ jobs:
           test "$(curl -sS -o /tmp/ready.json -w '%{http_code}' "$base/ready")" = "200"
           test "$(curl -sS -o /tmp/tools.json -w '%{http_code}' "$base/api/tools")" = "401"
           test "$(curl -sS -o /tmp/token-helper.html -w '%{http_code}' "$base/static/token-helper.html")" = "200"
-          echo "PRODUCTION_BOUNDARY_OK"
+
+          test "$(curl -sS -o /tmp/oauth-meta.json -w '%{http_code}' "$base/.well-known/oauth-authorization-server")" = "200"
+          grep -q '"authorization_endpoint"' /tmp/oauth-meta.json
+          grep -q '"token_endpoint"' /tmp/oauth-meta.json
+          grep -q '"S256"' /tmp/oauth-meta.json
+          grep -q '"refresh_token"' /tmp/oauth-meta.json
+
+          test "$(curl -sS -o /tmp/resource-meta.json -w '%{http_code}' "$base/.well-known/oauth-protected-resource")" = "200"
+          grep -Fq "\"resource\":\"$resource\"" /tmp/resource-meta.json
+
+          token_code=$(curl -sS -o /tmp/invalid-token.json -w '%{http_code}' \
+            -X POST "$base/oauth/token" \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data 'grant_type=authorization_code&code=not-a-real-code&client_id=not-a-real-client&redirect_uri=https%3A%2F%2Fexample.com%2Fcb&code_verifier=invalid&resource=https%3A%2F%2Faria-v4-production.up.railway.app%2Fmcp')
+          test "$token_code" = "400"
+          grep -q '"error"' /tmp/invalid-token.json
+
+          echo "PRODUCTION_OAUTH_BOUNDARY_OK"
