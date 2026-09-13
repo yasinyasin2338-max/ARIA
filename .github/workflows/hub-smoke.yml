@@ -1,0 +1,37 @@
+name: Universal Hub Smoke Test
+
+on:
+  push:
+    branches: [hub-v071-full-stage]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check live production boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://aria-v4-production.up.railway.app"
+
+          health_code=$(curl -sS -o /tmp/health.json -w "%{http_code}" "$base/health")
+          test "$health_code" = "200"
+          grep -q '"status":"ok"' /tmp/health.json
+          grep -q '"auth_enabled":true' /tmp/health.json
+          grep -q '"mcp_available":true' /tmp/health.json
+
+          ready_code=$(curl -sS -o /tmp/ready.json -w "%{http_code}" "$base/ready")
+          test "$ready_code" = "200"
+
+          tools_code=$(curl -sS -o /tmp/tools.json -w "%{http_code}" "$base/api/tools")
+          test "$tools_code" = "401"
+          grep -q 'Authentication required' /tmp/tools.json
+
+          mcp_headers=$(mktemp)
+          mcp_code=$(curl -sS -D "$mcp_headers" -o /tmp/mcp.json -w "%{http_code}" -X POST "$base/mcp" -H 'Content-Type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}')
+          test "$mcp_code" = "401"
+          grep -qi 'www-authenticate: Bearer' "$mcp_headers"
+
+          echo "SMOKE_OK"
