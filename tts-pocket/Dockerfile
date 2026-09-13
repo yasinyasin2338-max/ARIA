@@ -30,6 +30,7 @@ PY
 
 COPY token-helper.html /app/app/static/token-helper.html
 COPY token-helper.js /app/app/static/token-helper.js
+COPY provider-setup.html /app/app/static/provider-setup.html
 COPY oauth-patch.tar.xz.b64 /tmp/oauth-patch.b64
 
 RUN python - <<'PY'
@@ -93,7 +94,8 @@ p = Path('/app/app/static/index.html')
 html = p.read_text()
 if 'data-hub-admin-links' not in html:
     controls = '''
-      <button data-hub-admin-links onclick="location.href='/static/token-helper.html'">مدیریت Token</button>
+      <button data-hub-admin-links onclick="location.href='/static/provider-setup.html'">راهنمای اتصال سرویس‌ها</button>
+      <button onclick="location.href='/static/token-helper.html'">مدیریت Token</button>
       <button onclick="location.href='/static/oauth-app-manager.html'">تنظیم OAuth سرویس‌ها</button>
       <button class="secondary" onclick="fetch('/api/auth/logout',{method:'POST',credentials:'same-origin'}).then(()=>location.reload())">خروج</button>
 '''
