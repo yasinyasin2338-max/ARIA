@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check live production health, auth, OAuth and model boundary
+      - name: Check live production health, auth, OAuth, model and connector-manager boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -74,7 +74,11 @@ jobs:
           test "$(curl -sS -o /tmp/ready.json -w '%{http_code}' "$base/ready")" = "200"
           test "$(curl -sS -o /tmp/tools.json -w '%{http_code}' "$base/api/tools")" = "401"
           test "$(curl -sS -o /tmp/models.json -w '%{http_code}' "$base/api/models")" = "401"
+          test "$(curl -sS -o /tmp/oauth-apps.json -w '%{http_code}' "$base/api/oauth-apps")" = "401"
+          test "$(curl -sS -o /tmp/oauth-app-config.json -w '%{http_code}' "$base/api/oauth/github/app-config")" = "401"
           test "$(curl -sS -o /tmp/token-helper.html -w '%{http_code}' "$base/static/token-helper.html")" = "200"
+          test "$(curl -sS -o /tmp/oauth-app-manager.html -w '%{http_code}' "$base/static/oauth-app-manager.html")" = "200"
+          grep -q 'تنظیم OAuth سرویس‌ها' /tmp/oauth-app-manager.html
 
           test "$(curl -sS -o /tmp/oauth-meta.json -w '%{http_code}' "$base/.well-known/oauth-authorization-server")" = "200"
           grep -q '"authorization_endpoint"' /tmp/oauth-meta.json
@@ -92,4 +96,4 @@ jobs:
           test "$token_code" = "400"
           grep -q '"error"' /tmp/invalid-token.json
 
-          echo "PRODUCTION_OAUTH_MODEL_BOUNDARY_OK"
+          echo "PRODUCTION_CONNECTOR_MANAGER_BOUNDARY_OK"
