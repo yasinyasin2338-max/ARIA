@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check live production health, auth and OAuth boundary
+      - name: Check live production health, auth, OAuth and model boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -66,8 +66,10 @@ jobs:
           grep -q '"status":"ok"' /tmp/health.json
           grep -q '"auth_enabled":true' /tmp/health.json
           grep -q '"mcp_available":true' /tmp/health.json
+          grep -q '"openrouter"' /tmp/health.json
           test "$(curl -sS -o /tmp/ready.json -w '%{http_code}' "$base/ready")" = "200"
           test "$(curl -sS -o /tmp/tools.json -w '%{http_code}' "$base/api/tools")" = "401"
+          test "$(curl -sS -o /tmp/models.json -w '%{http_code}' "$base/api/models")" = "401"
           test "$(curl -sS -o /tmp/token-helper.html -w '%{http_code}' "$base/static/token-helper.html")" = "200"
 
           test "$(curl -sS -o /tmp/oauth-meta.json -w '%{http_code}' "$base/.well-known/oauth-authorization-server")" = "200"
@@ -86,4 +88,4 @@ jobs:
           test "$token_code" = "400"
           grep -q '"error"' /tmp/invalid-token.json
 
-          echo "PRODUCTION_OAUTH_BOUNDARY_OK"
+          echo "PRODUCTION_OAUTH_MODEL_BOUNDARY_OK"
