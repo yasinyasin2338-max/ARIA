@@ -28,6 +28,9 @@ with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as tf:
     tf.extractall(root)
 PY
 
+COPY token-helper.html /app/app/static/token-helper.html
+COPY token-helper.js /app/app/static/token-helper.js
+
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir '.[production]' \
     && groupadd --system hub \
