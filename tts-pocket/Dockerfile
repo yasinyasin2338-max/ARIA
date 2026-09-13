@@ -68,15 +68,34 @@ with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as tf:
     tf.extractall(root)
 PY
 
+COPY connector-patch.tar.xz.b64 /tmp/connector-patch.b64
+
+RUN python - <<'PY'
+import base64, hashlib, io, lzma, pathlib, tarfile
+payload = pathlib.Path('/tmp/connector-patch.b64').read_text().strip()
+compressed = base64.b64decode(payload)
+expected = '9aa58e894a7a860c06fe835d076e61f4330252ae1db7eaa4730146846587c5cb'
+actual = hashlib.sha256(compressed).hexdigest()
+assert actual == expected, f'connector patch checksum mismatch: {actual}'
+data = lzma.decompress(compressed)
+root = pathlib.Path('/app').resolve()
+with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as tf:
+    for member in tf.getmembers():
+        target = (root / member.name).resolve()
+        if target != root and root not in target.parents:
+            raise RuntimeError(f'unsafe connector patch path: {member.name}')
+    tf.extractall(root)
+PY
+
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir '.[production]' \
-    && python -m py_compile /app/oauth_entry.py /app/app/core/oauth_server.py /app/app/config.py /app/app/models/gateway.py \
+    && python -m py_compile /app/oauth_entry.py /app/connector_entry.py /app/app/core/oauth_server.py /app/app/config.py /app/app/models/gateway.py /app/app/connectors/oauth/service.py /app/app/container.py \
     && groupadd --system hub \
     && useradd --system --gid hub --home /app hub \
     && mkdir -p /app/data \
     && chown -R hub:hub /app \
-    && rm -rf /tmp/runtime-parts /tmp/oauth-patch.b64 /tmp/model-patch.b64
+    && rm -rf /tmp/runtime-parts /tmp/oauth-patch.b64 /tmp/model-patch.b64 /tmp/connector-patch.b64
 
 USER hub
 EXPOSE 8000
-CMD ["sh", "-c", "uvicorn oauth_entry:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn connector_entry:app --host 0.0.0.0 --port ${PORT:-8000}"]
