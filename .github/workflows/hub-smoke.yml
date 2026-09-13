@@ -15,7 +15,7 @@ jobs:
       - name: Build staged Hub image
         run: docker build -t hub-oauth-test ./tts-pocket
 
-      - name: Run staged Hub OAuth, model and connector-manager smoke tests
+      - name: Run staged Hub OAuth, model, connector-manager and privilege-drop smoke tests
         shell: bash
         run: |
           set -euo pipefail
@@ -23,7 +23,7 @@ jobs:
           export CI_TEST_PASSWORD="$TEST_PASS"
           export CI_HUB_BASE="http://127.0.0.1:18000"
 
-          docker run -d --name hubtest -p 18000:8000 \
+          docker run -d --name hubtest --user 0 -p 18000:8000 \
             -e PORT=8000 \
             -e UTH_ENV=development \
             -e UTH_AUTH_ENABLED=true \
@@ -46,6 +46,10 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:18000/health >/tmp/health.json
+
+          runtime_uid="$(docker exec hubtest sh -c "awk '/^Uid:/{print \$2}' /proc/1/status")"
+          test "$runtime_uid" != "0"
+
           python ./tts-pocket/ci_oauth_smoke.py
           python ./tts-pocket/ci_connector_smoke.py
 
