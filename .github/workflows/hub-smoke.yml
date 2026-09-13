@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check live production boundary
+      - name: Check live production boundary and token manager
         shell: bash
         run: |
           set -euo pipefail
@@ -33,5 +33,13 @@ jobs:
           mcp_code=$(curl -sS -D "$mcp_headers" -o /tmp/mcp.json -w "%{http_code}" -X POST "$base/mcp" -H 'Content-Type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}')
           test "$mcp_code" = "401"
           grep -qi 'www-authenticate: Bearer' "$mcp_headers"
+
+          helper_code=$(curl -sS -o /tmp/token-helper.html -w "%{http_code}" "$base/static/token-helper.html")
+          test "$helper_code" = "200"
+          grep -q 'Hub Token Manager' /tmp/token-helper.html
+
+          js_code=$(curl -sS -o /tmp/token-helper.js -w "%{http_code}" "$base/static/token-helper.js")
+          test "$js_code" = "200"
+          grep -q '/api/auth/api-tokens' /tmp/token-helper.js
 
           echo "SMOKE_OK"
