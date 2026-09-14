@@ -1,62 +1,64 @@
 # ChatGPT Plugin Submission Readiness — Universal AI Tool Hub
 
-Status: **PREPARATION ONLY — NOT READY FOR PUBLIC SUBMISSION YET**
+Status: **ENGINEERING PREP NEAR-COMPLETE — PUBLIC SUBMISSION BLOCKED BY EXTERNAL ACCOUNT/DEPLOYMENT GATES**
 
-Runtime version: **0.7.1**
-Production MCP URL: `https://aria-v4-production.up.railway.app/mcp`
+Existing Hub runtime: **0.7.1** on `hub-v071-deploy`.
+Plugin-prep branch: **`chatgpt-plugin-prep`**.
+The existing production Hub has not been replaced or modified by this branch.
 
-## What is already in good shape
+## Completed engineering work
 
-- Public production HTTPS endpoint exists.
-- MCP Streamable HTTP is exercised by CI.
-- OAuth authorization-code flow with PKCE S256 is implemented.
-- Refresh-token rotation and replay rejection are tested.
-- OAuth protected-resource metadata is published for the MCP resource.
-- Anonymous access to protected APIs is rejected.
-- Production health/readiness checks are in place.
-- Provider setup UI uses an external script with a restrictive CSP.
+- Dedicated ChatGPT-facing MCP implementation is separate from the internal/admin Hub surface.
+- Exact initial public tool set is frozen at five read-only/advisory tools:
+  - `list_supported_workflows`
+  - `find_workflow`
+  - `explain_workflow`
+  - `plan_workflow`
+  - `check_workflow_requirements`
+- No generic `execute_tool`, raw provider passthrough, arbitrary URL relay, credential retrieval, subprocess/system execution, or dynamic code execution is exposed by the public module.
+- Tool annotations are explicitly read-only, non-destructive, closed-world, and idempotent.
+- Inputs are bounded and unknown workflow IDs fail closed.
+- Tool results explicitly state when no external action, credential return, or private-account fetch occurred.
+- MCP uses Streamable HTTP on canonical path `/mcp/`.
+- DNS-rebinding protection and explicit host/origin configuration are implemented.
+- Public health, about, privacy, terms, and support routes are implemented in the standalone service.
+- OpenAI domain-challenge route is implemented at `/.well-known/openai-apps-challenge` and remains disabled unless an environment token is configured.
+- Standalone non-root Docker image is defined by `tts-pocket/Dockerfile.chatgpt-public`.
+- GitHub CI compiles the code, runs static safety checks, starts the MCP server, checks public routes and security headers, exercises all five tools over MCP, runs negative cases, simulates the production host/origin, builds the standalone container, and smoke-tests it as a non-root user.
+- Reviewer test-case document is aligned with the exact five-tool surface.
+- Listing copy and zero-cost engineering plan are documented.
 
-## OpenAI public-plugin requirements still to satisfy
+## Why the full internal Hub is not submitted directly
 
-1. **Verified publisher identity** in the OpenAI Platform (individual or business).
-2. **Apps Management / plugin submission write permission** for the submitting Platform organization.
-3. **Public listing materials**: plugin name, short description, long description, production logo, category, website, support URL, privacy-policy URL, terms URL.
-4. **Accurate MCP tool metadata** for every exposed tool, including `readOnlyHint`, `openWorldHint`, and `destructiveHint`.
-5. **Five positive test cases and three negative test cases** with deterministic expected behavior.
-6. **Reviewer-ready authentication**. If review requires a demo account, it must work without MFA, SMS, email confirmation, or private-network access.
-7. **Domain verification** if the submission portal requests it, using the OpenAI challenge path on the production domain.
-8. **Privacy minimization audit** of every tool response. Do not return auth secrets, debug payloads, session/trace/request identifiers, or unrelated personal data.
-9. **Country/region availability** must be selected deliberately.
-10. If UI resources are attached to MCP tools, their CSP must list only the exact domains they fetch from.
+The broader Hub is a universal multi-provider connector/orchestration system. The public ChatGPT surface is intentionally narrower so the submitted app is explicit and reviewable rather than an unrestricted pass-through intermediary. The internal/admin Hub remains available only through its existing protected surface.
 
-## Critical policy risk discovered
+## Remaining gates before an actual OpenAI submission
 
-The current Hub is designed as a universal connector/orchestration layer over multiple third-party services. OpenAI's current plugin guidelines say that plugins that primarily function as unofficial connectors to third-party services, including pass-through intermediary software layers, cannot be approved. The same guidelines also require authorized access to third-party APIs and prohibit circumvention of provider restrictions.
+### External/account gates
 
-Because of that, the current full Hub surface should **not** be submitted unchanged. A public-directory version should expose a narrower, clearly first-party workflow surface whose main value is the Hub's own orchestration logic, not a generic relay to arbitrary third-party services. Any third-party capability included in the public version needs a defensible authorization/terms basis and narrowly scoped permissions.
+1. **Publisher verification:** the user's current OpenAI Platform organization UI requires a valid default payment method before individual verification can start. No payment method has been added as part of this project.
+2. **Submission access:** the verified Platform organization must have the required app/plugin submission permission.
+3. **Publisher identity fields:** the final displayed publisher name must match the verified identity.
 
-## Recommended public-plugin shape
+### Public-release gates
 
-Create a dedicated **ChatGPT-facing MCP surface** for the Hub, separate from the unrestricted internal/admin surface. The public surface should initially expose only clearly reviewable Hub-owned capabilities, for example:
+4. **Public deployment:** deploy the standalone ChatGPT public MCP to a stable HTTPS URL without replacing the existing v0.7.1 Hub. Do not create a paid hosting resource merely to satisfy this step without an explicit cost decision.
+5. **Final host/origin values:** set the deployed host in the transport-security allowlist and verify the exact public MCP URL.
+6. **Domain challenge token:** when OpenAI supplies a challenge token, configure it only as an environment variable and verify the exact response.
+7. **Final support/privacy identity:** choose a publisher-controlled support/privacy contact that is appropriate for public use. Do not publish a personal email automatically.
+8. **Production logo:** provide the final listing logo required by the submission portal.
+9. **Portal fields:** select final category and country/region availability in the submission UI.
+10. **Final scan:** run OpenAI Scan Tools against the exact deployed MCP snapshot and compare the scanned tool list/annotations with this repository.
+11. **Final reviewer run:** rerun the five positive and three negative cases against the exact deployed snapshot.
 
-- Discover supported Hub workflows.
-- Inspect a user's Hub connection status without returning credentials.
-- Run explicitly defined Hub workflows with clear side-effect boundaries.
-- Generate/model-route through the Hub only where provider terms permit this use.
-- Return minimal, task-specific results.
+## Zero-cost boundary
 
-Avoid exposing a generic `execute_tool` that can invoke arbitrary hidden third-party actions in the public listing. Prefer explicit, human-readable tools with one purpose each.
+No OpenAI API key, OpenAI API credit, ChatGPT Business subscription, or paid OpenAI model call is required by the plugin-prep code or CI. Any future action that can create a charge must remain a separate explicit decision.
 
-## Next engineering work
+## Release rule
 
-- Inventory every production MCP tool and classify it as read-only / write / destructive / open-world.
-- Split admin/internal tools from public plugin tools.
-- Replace generic tool relay operations on the public surface with explicit workflow tools.
-- Add complete MCP annotations and reviewer-safe descriptions.
-- Add public privacy, terms, support, and website pages under the production domain.
-- Add plugin-specific automated checks to CI.
-- Only after those checks pass, create a draft in the OpenAI plugin submission portal and run **Scan Tools**.
+Do **not** merge this preparation branch into the protected production branch merely to make the plugin public. The safest release model is a separate deployment of `Dockerfile.chatgpt-public`, followed by verification of the exact public URL. The current production v0.7.1 Hub should remain unchanged until a separately tested release decision is made.
 
-## Important
+## Definition of engineering-ready
 
-This branch is intentionally separate from production. Nothing in this preparation document changes the currently deployed v0.7.1 runtime.
+The engineering package is considered ready for external submission steps only when the latest `ChatGPT Plugin Prep Check` run is green on the final branch head. Public submission itself cannot be called complete until publisher verification, stable HTTPS deployment, OpenAI tool scan, and review submission are actually completed.
