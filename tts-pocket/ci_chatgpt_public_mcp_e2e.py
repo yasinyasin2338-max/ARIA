@@ -2,7 +2,7 @@ import asyncio
 import os
 
 BASE = os.environ.get("CI_CHATGPT_PUBLIC_BASE", "http://127.0.0.1:18081").rstrip("/")
-RESOURCE = BASE + "/mcp"
+RESOURCE = BASE + "/mcp/"
 PRODUCTION_HOST = "aria-v4-production.up.railway.app"
 
 
