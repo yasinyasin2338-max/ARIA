@@ -26,7 +26,7 @@ permissions:
 jobs:
   validate-public-mcp:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v5
 
@@ -36,6 +36,12 @@ jobs:
 
       - name: Install pinned public MCP dependencies
         run: python -m pip install -r tts-pocket/requirements-chatgpt-public.txt
+
+      - name: Audit dependencies and public source
+        run: |
+          python -m pip install pip-audit bandit
+          pip-audit -r tts-pocket/requirements-chatgpt-public.txt
+          bandit -q -ll tts-pocket/chatgpt_public_mcp.py
 
       - name: Compile and run static safety checks
         run: |
@@ -84,7 +90,15 @@ jobs:
         run: |
           set -euo pipefail
           docker build -f tts-pocket/Dockerfile.chatgpt-public -t aria-chatgpt-public ./tts-pocket
-          docker run -d --name aria-chatgpt-public-test -e PORT=8000 -e OPENAI_APPS_CHALLENGE_TOKEN=ci-challenge-token -p 18082:8000 aria-chatgpt-public
+          docker run -d --name aria-chatgpt-public-test \
+            --read-only \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            -e PORT=8000 \
+            -e OPENAI_APPS_CHALLENGE_TOKEN=ci-challenge-token \
+            -p 18082:8000 \
+            aria-chatgpt-public
           cleanup(){ docker logs aria-chatgpt-public-test || true; docker rm -f aria-chatgpt-public-test >/dev/null 2>&1 || true; }
           trap cleanup EXIT
           for i in $(seq 1 40); do
