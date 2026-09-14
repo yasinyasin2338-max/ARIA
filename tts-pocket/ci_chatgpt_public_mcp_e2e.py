@@ -3,21 +3,20 @@ import os
 
 BASE = os.environ.get("CI_CHATGPT_PUBLIC_BASE", "http://127.0.0.1:18081").rstrip("/")
 RESOURCE = BASE + "/mcp"
+PRODUCTION_HOST = "aria-v4-production.up.railway.app"
 
 
-async def main() -> None:
-    try:
-        import httpx2 as httpx_client
-    except ImportError:
-        import httpx as httpx_client
-
+async def exercise_client(httpx_client, headers=None) -> None:
     from mcp import Client
     try:
         from mcp.client.streamable_http import streamable_http_client
     except ImportError:
         from mcp.client.streamable_http import streamablehttp_client as streamable_http_client
 
-    async with httpx_client.AsyncClient(timeout=httpx_client.Timeout(15.0, read=30.0)) as http_client:
+    async with httpx_client.AsyncClient(
+        headers=headers or {},
+        timeout=httpx_client.Timeout(15.0, read=30.0),
+    ) as http_client:
         transport = streamable_http_client(RESOURCE, http_client=http_client)
         async with Client(transport) as client:
             listed = await client.list_tools()
@@ -69,6 +68,22 @@ async def main() -> None:
 
             result = await client.call_tool("explain_workflow", {"workflow_id": "does-not-exist"})
             assert "not_found" in str(result).lower(), result
+
+
+async def main() -> None:
+    try:
+        import httpx2 as httpx_client
+    except ImportError:
+        import httpx as httpx_client
+
+    await exercise_client(httpx_client)
+    await exercise_client(
+        httpx_client,
+        headers={
+            "Host": PRODUCTION_HOST,
+            "Origin": f"https://{PRODUCTION_HOST}",
+        },
+    )
 
     print("CHATGPT_PUBLIC_MCP_E2E_OK")
 
