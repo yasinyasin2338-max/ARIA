@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>نهایی‌سازی اتصال‌ها — Universal AI Tool Hub</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark}
+body{margin:0;background:#0b1020;color:#eef2ff}.wrap{max-width:900px;margin:auto;padding:18px}.top{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.card{background:#151b2f;border:1px solid #29324d;border-radius:16px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}.field{display:grid;gap:6px;margin:10px 0}input{width:100%;box-sizing:border-box;border-radius:11px;border:1px solid #34405f;background:#0d1325;color:#eef2ff;padding:12px;font-size:16px}button,a.btn{appearance:none;border:0;border-radius:12px;padding:11px 14px;background:#6d5dfc;color:#fff;text-decoration:none;font-weight:700;display:inline-block}button.secondary,a.secondary{background:#27314f}button.danger{background:#8b2f45}button:disabled{opacity:.45}.muted{color:#aeb8d4}.ok{color:#7ee787}.warn{color:#ffd166}.error{color:#ff8b94}.cb{word-break:break-all;background:#0d1325;padding:10px;border-radius:10px;border:1px solid #28324c}.status{font-weight:800}.provider-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.notice{position:sticky;top:8px;z-index:3;background:#12233a;border:1px solid #2b5b86;border-radius:12px;padding:12px;margin:10px 0}.hidden{display:none}.footer{margin-top:20px;color:#98a4c6;font-size:.9rem}
+</style>
+</head>
+<body><main class="wrap">
+<div class="top"><div><h1>نهایی‌سازی اتصال سرویس‌ها</h1><div class="muted">Client Secret فقط از همین مرورگر مستقیم داخل Vault ذخیره می‌شود؛ Hub آن را دوباره نمایش نمی‌دهد.</div></div><div class="row"><a class="btn secondary" href="/static/provider-setup.html">راهنمای ساخت App</a><a class="btn secondary" href="/">Hub</a></div></div>
+<div id="msg" class="notice hidden" role="status" aria-live="polite"></div>
+<div class="card"><b>آدرس Callback فعلی</b><div id="base" class="cb"></div><div class="warn" style="margin-top:8px">رمز، Client Secret یا Token را داخل چت یا اسکرین‌شات نفرست.</div></div>
+<div id="cards"></div>
+<div class="footer">Universal AI Tool Hub v0.7.1 — secure connector finalization wizard</div>
+</main>
+<script>
+const origin=location.origin;
+document.getElementById('base').textContent=origin;
+const labels={google:'Google',microsoft:'Microsoft',github:'GitHub',slack:'Slack',notion:'Notion',dropbox:'Dropbox',atlassian:'Atlassian'};
+const setupLinks={github:'https://github.com/settings/applications/new',google:'https://console.cloud.google.com/apis/credentials',microsoft:'https://entra.microsoft.com/',slack:'https://api.slack.com/apps',notion:'https://app.notion.com/developers/connections',dropbox:'https://www.dropbox.com/developers/apps/create',atlassian:'https://developer.atlassian.com/console/myapps/'};
+let connections={};
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+function message(text,bad=false){const el=document.getElementById('msg');el.textContent=text;el.className='notice '+(bad?'error':'ok');el.classList.remove('hidden');requestAnimationFrame(()=>el.scrollIntoView({behavior:'smooth',block:'center'}))}
+async function api(path,opts={}){const r=await fetch(path,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(opts.headers||{})},...opts});let body=null;try{body=await r.json()}catch{}if(!r.ok){if(r.status===401){location.href='/';throw new Error('ابتدا وارد Hub شو.')}throw new Error(body?.detail||body?.error||`HTTP ${r.status}`)}return body}
+async function load(){
+  try{
+    await api('/api/auth/me');
+    const [apps,catalog]=await Promise.all([api('/api/oauth-apps'),api('/api/connections/catalog')]);
+    connections=Object.fromEntries((catalog||[]).map(x=>[x.key,x]));
+    render(apps||[]);
+  }catch(e){message(e.message||String(e),true)}
+}
+function render(apps){
+ const root=document.getElementById('cards');root.innerHTML='';
+ for(const a of apps){
+   const key=a.key, con=connections[key]||{}, configured=!!a.configured, connected=con.status==='CONNECTED';
+   const div=document.createElement('section');div.className='card';
+   div.innerHTML=`<div class="provider-head"><h2>${esc(labels[key]||a.provider||key)}</h2><span class="status ${connected?'ok':configured?'warn':''}">${connected?'CONNECTED ✓':configured?'CREDENTIALS SAVED':'NOT CONFIGURED'}</span></div>
+   <div class="muted">Callback: ${esc(origin+'/api/oauth/'+key+'/callback')}</div>
+   <div class="field"><label>Client ID</label><input id="id-${esc(key)}" autocomplete="off" inputmode="text" placeholder="Client ID را اینجا وارد کن"></div>
+   <div class="field"><label>Client Secret</label><input id="secret-${esc(key)}" type="password" autocomplete="new-password" placeholder="Client Secret فقط برای ذخیره در Vault"></div>
+   <div class="row">
+    <button class="save">ذخیره امن</button>
+    <button class="save-connect">ذخیره امن و اتصال</button>
+    <button class="connect secondary" ${configured?'':'disabled'}>اتصال با Credential ذخیره‌شده</button>
+    <a class="btn secondary" target="_blank" rel="noopener" href="${setupLinks[key]||'#'}">ساخت/مدیریت App</a>
+    <button class="delete danger" ${configured?'':'disabled'}>حذف Credential</button>
+   </div>`;
+   div.querySelector('.save').onclick=()=>save(key,false);
+   div.querySelector('.save-connect').onclick=()=>save(key,true);
+   div.querySelector('.connect').onclick=()=>connect(key);
+   div.querySelector('.delete').onclick=()=>removeConfig(key);
+   root.appendChild(div);
+ }
+}
+async function save(key,thenConnect){
+ const client_id=document.getElementById('id-'+key).value.trim();
+ const client_secret=document.getElementById('secret-'+key).value.trim();
+ if(!client_id||!client_secret){message('برای '+(labels[key]||key)+' هر دو مقدار Client ID و Client Secret لازم است.',true);return}
+ try{
+   message('در حال ذخیره امن '+(labels[key]||key)+'...');
+   const saved=await api(`/api/oauth/${encodeURIComponent(key)}/app-config`,{method:'PUT',body:JSON.stringify({client_id,client_secret})});
+   document.getElementById('secret-'+key).value='';
+   if(!saved?.configured)throw new Error('ذخیره انجام شد اما Provider configured نشد.');
+   message((labels[key]||key)+' با موفقیت داخل Vault ذخیره شد ✓');
+   if(thenConnect)setTimeout(()=>connect(key),250);else await load();
+ }catch(e){message(e.message||String(e),true)}
+}
+function connect(key){message('در حال انتقال امن به '+(labels[key]||key)+'...');location.assign(`/api/oauth/${encodeURIComponent(key)}/start?browser=1`)}
+async function removeConfig(key){
+ if(!confirm('Credential ذخیره‌شده '+(labels[key]||key)+' حذف شود؟'))return;
+ try{await api(`/api/oauth/${encodeURIComponent(key)}/app-config`,{method:'DELETE'});message('Credential حذف شد.');await load()}catch(e){message(e.message||String(e),true)}
+}
+load();
+</script></body></html>
