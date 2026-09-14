@@ -70,7 +70,7 @@ jobs:
           challenge=$(curl -fsS http://127.0.0.1:18081/.well-known/openai-apps-challenge)
           test "$challenge" = "ci-challenge-token"
 
-          headers=$(curl -sSI http://127.0.0.1:18081/health | tr -d '\r')
+          headers=$(curl -sS -D - -o /dev/null http://127.0.0.1:18081/health | tr -d '\r')
           echo "$headers" | grep -Fiq 'cache-control: no-store'
           echo "$headers" | grep -Fiq 'x-content-type-options: nosniff'
           echo "$headers" | grep -Fiq 'referrer-policy: no-referrer'
