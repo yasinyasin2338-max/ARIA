@@ -6,13 +6,13 @@ import os
 from dataclasses import dataclass
 from typing import Iterable
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 APP_NAME = "Universal AI Tool Hub — ChatGPT Public Surface"
-VERSION = "0.2.1-prep"
+VERSION = "0.2.2-prep"
 MAX_QUERY_CHARS = 600
 MAX_GOAL_CHARS = 1200
 MAX_ID_CHARS = 80
@@ -293,6 +293,14 @@ def health() -> dict:
 @app.get("/about", response_class=HTMLResponse)
 def about() -> str:
     return home()
+
+
+@app.get("/.well-known/openai-apps-challenge", response_class=PlainTextResponse)
+def openai_apps_challenge() -> PlainTextResponse:
+    token = os.environ.get("OPENAI_APPS_CHALLENGE_TOKEN", "").strip()
+    if not token:
+        raise HTTPException(status_code=404, detail="challenge not configured")
+    return PlainTextResponse(token, media_type="text/plain")
 
 
 @app.get("/privacy", response_class=HTMLResponse)
