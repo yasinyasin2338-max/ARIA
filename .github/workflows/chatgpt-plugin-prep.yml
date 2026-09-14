@@ -7,6 +7,7 @@ on:
       - 'tts-pocket/chatgpt_public_mcp.py'
       - 'tts-pocket/ci_chatgpt_public_mcp_*.py'
       - 'tts-pocket/Dockerfile.chatgpt-public'
+      - 'tts-pocket/requirements-chatgpt-public.txt'
       - 'docs/chatgpt-plugin/**'
       - '.github/workflows/chatgpt-plugin-prep.yml'
   pull_request:
@@ -15,6 +16,7 @@ on:
       - 'tts-pocket/chatgpt_public_mcp.py'
       - 'tts-pocket/ci_chatgpt_public_mcp_*.py'
       - 'tts-pocket/Dockerfile.chatgpt-public'
+      - 'tts-pocket/requirements-chatgpt-public.txt'
       - 'docs/chatgpt-plugin/**'
       - '.github/workflows/chatgpt-plugin-prep.yml'
 
@@ -32,8 +34,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install MCP runtime dependencies
-        run: python -m pip install -r tts-pocket/requirements-hub.txt
+      - name: Install pinned public MCP dependencies
+        run: python -m pip install -r tts-pocket/requirements-chatgpt-public.txt
 
       - name: Compile and run static safety checks
         run: |
@@ -45,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           cd tts-pocket
-          OPENAI_APPS_CHALLENGE_TOKEN=ci-challenge-token python -m uvicorn chatgpt_public_mcp:app --host 127.0.0.1 --port 18081 >/tmp/chatgpt-public-mcp.log 2>&1 &
+          OPENAI_APPS_CHALLENGE_TOKEN=ci-challenge-token python -m uvicorn chatgpt_public_mcp:app --host 127.0.0.1 --port 18081 --no-access-log >/tmp/chatgpt-public-mcp.log 2>&1 &
           pid=$!
           cleanup(){ kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; cat /tmp/chatgpt-public-mcp.log || true; }
           trap cleanup EXIT
