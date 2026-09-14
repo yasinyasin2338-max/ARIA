@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build staged Hub image
         run: docker build -t hub-oauth-test ./tts-pocket
       - name: Run staged Hub OAuth, MCP, model, connector-manager, mobile UI and privilege-drop smoke tests
