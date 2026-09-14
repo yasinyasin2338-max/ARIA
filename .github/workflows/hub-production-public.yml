@@ -1,0 +1,55 @@
+name: Hub Production Public UI Check
+
+on:
+  push:
+    branches: [hub-v071-full-stage]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify production setup wizard
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://aria-v4-production.up.railway.app"
+
+          test "$(curl -sS -o /tmp/ready.json -w '%{http_code}' "$base/ready")" = "200"
+
+          test "$(curl -sS -D /tmp/setup-headers.txt -o /tmp/setup.html -w '%{http_code}' "$base/static/provider-setup.html")" = "200"
+          grep -q 'راهنمای اتصال و نهایی‌سازی سرویس‌ها' /tmp/setup.html
+          grep -Fq '<script src="/static/provider-setup.js" defer></script>' /tmp/setup.html
+          if grep -Eq '<script[^>]*>[^<]+' /tmp/setup.html; then
+            echo 'inline provider script found on production'
+            exit 1
+          fi
+
+          csp="$(tr -d '\r' </tmp/setup-headers.txt | grep -i '^content-security-policy:' | head -1)"
+          echo "$csp" | grep -Fq "script-src 'self'"
+          echo "$csp" | grep -Fq "script-src-attr 'unsafe-inline'"
+          if echo "$csp" | grep -Fq "script-src 'self' 'unsafe-inline'"; then
+            echo 'unsafe inline scripts enabled'
+            exit 1
+          fi
+
+          test "$(curl -sS -o /tmp/setup.js -w '%{http_code}' "$base/static/provider-setup.js")" = "200"
+          grep -Fq 'github.com/settings/applications/new' /tmp/setup.js
+          grep -Fq '/api/oauth/github/callback' /tmp/setup.js
+          grep -Fq '/api/oauth/google/callback' /tmp/setup.js
+          grep -Fq '/api/oauth-apps' /tmp/setup.js
+          grep -Fq '/app-config' /tmp/setup.js
+          grep -Fq 'start?browser=1' /tmp/setup.js
+          grep -Fq 'No user information' /tmp/setup.js
+          if grep -Fq 'Yasin.aris.sayeh' /tmp/setup.js; then
+            echo 'personal workspace leaked in public production JS'
+            exit 1
+          fi
+          node --check /tmp/setup.js
+
+          test "$(curl -sS -o /tmp/index.html -w '%{http_code}' "$base/")" = "200"
+          grep -q 'راهنمای اتصال سرویس‌ها' /tmp/index.html
+          grep -q 'Secure Compact Runtime' /tmp/index.html
+
+          echo PRODUCTION_SETUP_WIZARD_OK
