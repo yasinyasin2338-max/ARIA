@@ -27,7 +27,7 @@ def _chown_tree(path: Path, uid: int, gid: int) -> None:
 
 
 def _patch_mobile_ui() -> None:
-    """Patch v0.7.1 mobile navigation and deterministic OAuth handoff.
+    """Patch v0.7.1 mobile navigation, OAuth handoff, and feedback visibility.
 
     The stock UI fetches ``/api/oauth/{provider}/start`` and then navigates to
     the returned authorization URL. On some mobile browsers that fetch can
@@ -35,6 +35,10 @@ def _patch_mobile_ui() -> None:
     helper with an explicit top-level navigation carrying ``browser=1``. The
     ASGI wrapper recognizes that flag and converts the Hub JSON response into
     a same-request 302 for every OAuth provider.
+
+    Connector test feedback is also located below the provider cards in stock
+    v0.7.1, so it can look like a tap did nothing on a phone. Make status/error
+    feedback an ARIA live region and scroll it into view after it changes.
     """
     path = Path("/app/app/static/app.js")
     if not path.exists():
@@ -58,6 +62,15 @@ def _patch_mobile_ui() -> None:
         if old_connect not in text:
             raise RuntimeError("Hub OAuth connect function signature changed; refusing blind patch")
         text = text.replace(old_connect, new_connect, 1)
+        changed = True
+
+    feedback_marker = "aria-live','polite'"
+    if feedback_marker not in text:
+        old_feedback = "function setConnectionMessage(msg,isError=false){const el=$('#connectionMessage');el.textContent=msg;el.className=isError?'notice error':'notice'}"
+        new_feedback = "function setConnectionMessage(msg,isError=false){const el=$('#connectionMessage');el.textContent=msg;el.className=isError?'notice error':'notice';el.setAttribute('role','status');el.setAttribute('aria-live','polite');requestAnimationFrame(()=>el.scrollIntoView({behavior:'smooth',block:'center'}))}"
+        if old_feedback not in text:
+            raise RuntimeError("Hub connection feedback function signature changed; refusing blind patch")
+        text = text.replace(old_feedback, new_feedback, 1)
         changed = True
 
     if changed:
