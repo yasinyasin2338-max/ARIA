@@ -1,0 +1,113 @@
+name: Hub ChatGPT Public Route Check
+
+on:
+  push:
+    branches: [hub-v071-chatgpt-public-route]
+    paths:
+      - 'tts-pocket/chatgpt_public_bridge.py'
+      - 'tts-pocket/ci_chatgpt_bridge_e2e.py'
+      - 'tts-pocket/secure_entrypoint.py'
+      - 'tts-pocket/Dockerfile'
+      - '.github/workflows/hub-chatgpt-public-route.yml'
+  pull_request:
+    branches: [hub-v071-deploy]
+
+permissions:
+  contents: read
+
+jobs:
+  full-image-regression-and-public-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Static compile and public-boundary checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tts-pocket/chatgpt_public_bridge.py tts-pocket/secure_entrypoint.py tts-pocket/ci_chatgpt_bridge_e2e.py
+          grep -Fq '_PUBLIC_PREFIX = "/chatgpt-public"' tts-pocket/secure_entrypoint.py
+          grep -Fq 'path == "/.well-known/openai-apps-challenge"' tts-pocket/secure_entrypoint.py
+          grep -Fq '"readOnlyHint": True' tts-pocket/chatgpt_public_bridge.py
+          grep -Fq '"openWorldHint": False' tts-pocket/chatgpt_public_bridge.py
+          grep -Fq '"destructiveHint": False' tts-pocket/chatgpt_public_bridge.py
+          grep -Fq '"idempotentHint": True' tts-pocket/chatgpt_public_bridge.py
+          if grep -Eq 'subprocess|os\.system|os\.popen|eval\(|exec\(' tts-pocket/chatgpt_public_bridge.py; then
+            echo 'forbidden execution primitive in public bridge'; exit 1
+          fi
+
+      - name: Build full production-compatible Hub image
+        run: docker build -t hub-chatgpt-route ./tts-pocket
+
+      - name: Run full Hub regression plus public MCP protocol tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_PASS="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          export CI_TEST_PASSWORD="$TEST_PASS"
+          export CI_HUB_BASE="http://127.0.0.1:18000"
+
+          docker run -d --name hubtest --user 0 -p 18000:8000 \
+            -e PORT=8000 \
+            -e UTH_ENV=development \
+            -e UTH_AUTH_ENABLED=true \
+            -e UTH_BOOTSTRAP_ADMIN_EMAIL=admin@test.local \
+            -e UTH_BOOTSTRAP_ADMIN_PASSWORD="$TEST_PASS" \
+            -e UTH_PUBLIC_BASE_URL=http://127.0.0.1:8000 \
+            -e UTH_HTTP_ALLOWED_HOSTS=127.0.0.1,localhost \
+            -e UTH_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://127.0.0.1:18000 \
+            -e UTH_MCP_ALLOWED_HOSTS=127.0.0.1:8000,127.0.0.1,localhost:8000,localhost \
+            -e UTH_MCP_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://127.0.0.1:18000 \
+            -e UTH_OPENROUTER_API_KEY=ci-placeholder-key \
+            -e UTH_OPENROUTER_MODEL=ci/test-model \
+            -e OPENAI_APPS_CHALLENGE_TOKEN=ci-challenge-token \
+            hub-chatgpt-route
+
+          cleanup(){ docker logs hubtest || true; docker rm -f hubtest >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          for i in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:18000/health >/tmp/health.json; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18000/health >/tmp/health.json
+          grep -Fq '"status":"ok"' /tmp/health.json
+
+          runtime_uid="$(docker exec hubtest sh -c "awk '/^Uid:/{print \$2}' /proc/1/status")"
+          test "$runtime_uid" != "0"
+
+          # Existing protected Hub boundary remains intact.
+          test "$(curl -sS -o /tmp/tools.json -w '%{http_code}' http://127.0.0.1:18000/api/tools)" = "401"
+          test "$(curl -sS -o /tmp/private-mcp.txt -w '%{http_code}' -X POST http://127.0.0.1:18000/mcp/ -H 'Content-Type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')" = "401"
+
+          # Public route and legal/support pages are intentionally unauthenticated and read-only.
+          test "$(curl -sS -o /tmp/public-health.json -w '%{http_code}' http://127.0.0.1:18000/chatgpt-public/health)" = "200"
+          grep -Fq '"tool_count":5' /tmp/public-health.json
+          grep -Fq '"surface":"read_only_public"' /tmp/public-health.json
+          for path in /chatgpt-public/ /chatgpt-public/about /chatgpt-public/privacy /chatgpt-public/terms /chatgpt-public/support; do
+            test "$(curl -sS -o /tmp/page.html -w '%{http_code}' "http://127.0.0.1:18000$path")" = "200"
+          done
+
+          test "$(curl -fsS http://127.0.0.1:18000/.well-known/openai-apps-challenge)" = "ci-challenge-token"
+          test "$(curl -fsS http://127.0.0.1:18000/chatgpt-public/.well-known/openai-apps-challenge)" = "ci-challenge-token"
+
+          # DNS-rebinding/origin protection fails closed.
+          test "$(curl -sS -o /tmp/bad-host.json -w '%{http_code}' -X POST http://127.0.0.1:18000/chatgpt-public/mcp -H 'Host: attacker.invalid' -H 'Content-Type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')" = "421"
+          test "$(curl -sS -o /tmp/bad-origin.json -w '%{http_code}' -X POST http://127.0.0.1:18000/chatgpt-public/mcp -H 'Origin: https://attacker.invalid' -H 'Content-Type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')" = "421"
+
+          # Re-run the existing OAuth/MCP/model regression suite inside the exact full image.
+          docker cp ./tts-pocket/ci_oauth_smoke.py hubtest:/tmp/ci_oauth_smoke.py
+          docker exec -e CI_TEST_PASSWORD="$TEST_PASS" -e CI_HUB_BASE=http://127.0.0.1:8000 hubtest python /tmp/ci_oauth_smoke.py
+          docker cp ./tts-pocket/ci_model_smoke.py hubtest:/tmp/ci_model_smoke.py
+          docker exec hubtest python /tmp/ci_model_smoke.py
+
+          # Validate compatibility using the current official Python MCP client package.
+          python -m pip install --disable-pip-version-check 'mcp==2.2.0' 'httpx>=0.28,<1'
+          CI_HUB_BASE=http://127.0.0.1:18000 python ./tts-pocket/ci_chatgpt_bridge_e2e.py
+
+          echo 'HUB_CHATGPT_PUBLIC_ROUTE_OK'
