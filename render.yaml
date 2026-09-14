@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: aria-chatgpt-public
+    runtime: docker
+    plan: free
+    branch: chatgpt-plugin-prep
+    dockerfilePath: ./tts-pocket/Dockerfile.chatgpt-public
+    dockerContext: ./tts-pocket
+    healthCheckPath: /health
+    autoDeployTrigger: off
