@@ -26,11 +26,11 @@ jobs:
             -e UTH_AUTH_ENABLED=true \
             -e UTH_BOOTSTRAP_ADMIN_EMAIL=admin@test.local \
             -e UTH_BOOTSTRAP_ADMIN_PASSWORD="$TEST_PASS" \
-            -e UTH_PUBLIC_BASE_URL=http://127.0.0.1:18000 \
+            -e UTH_PUBLIC_BASE_URL=http://127.0.0.1:8000 \
             -e UTH_HTTP_ALLOWED_HOSTS=127.0.0.1,localhost \
-            -e UTH_ALLOWED_ORIGINS=http://127.0.0.1:18000 \
+            -e UTH_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://127.0.0.1:18000 \
             -e UTH_MCP_ALLOWED_HOSTS=127.0.0.1,localhost \
-            -e UTH_MCP_ALLOWED_ORIGINS=http://127.0.0.1:18000 \
+            -e UTH_MCP_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://127.0.0.1:18000 \
             -e UTH_OPENROUTER_API_KEY=ci-placeholder-key \
             -e UTH_OPENROUTER_MODEL=ci/test-model \
             hub-oauth-test
@@ -40,7 +40,8 @@ jobs:
           curl -fsS http://127.0.0.1:18000/health >/tmp/health.json
           runtime_uid="$(docker exec hubtest sh -c "awk '/^Uid:/{print \$2}' /proc/1/status")"
           test "$runtime_uid" != "0"
-          python ./tts-pocket/ci_oauth_smoke.py
+          docker cp ./tts-pocket/ci_oauth_smoke.py hubtest:/tmp/ci_oauth_smoke.py
+          docker exec -e CI_TEST_PASSWORD="$TEST_PASS" -e CI_HUB_BASE=http://127.0.0.1:8000 hubtest python /tmp/ci_oauth_smoke.py
           python ./tts-pocket/ci_connector_smoke.py
           test "$(curl -sS -o /tmp/oauth-app-manager.html -w '%{http_code}' http://127.0.0.1:18000/static/oauth-app-manager.html)" = "200"
           grep -q 'تنظیم OAuth سرویس‌ها' /tmp/oauth-app-manager.html
