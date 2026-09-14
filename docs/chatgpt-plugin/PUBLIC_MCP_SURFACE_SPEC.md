@@ -1,91 +1,90 @@
-# Public ChatGPT MCP Surface — Initial Specification
+# Public ChatGPT MCP Surface — Frozen Initial Specification
 
-Status: design target for the `chatgpt-plugin-prep` branch. This does not change production by itself.
+Status: implementation target and review contract for `chatgpt-plugin-prep`. This branch does not change the existing production Hub by itself.
 
-## Design principles
+## Purpose
 
-The public ChatGPT-facing surface must be smaller and more reviewable than the Hub's internal/admin surface. It should expose explicit Hub-owned workflows, minimize returned data, and avoid a generic unrestricted relay into third-party services.
+The ChatGPT-facing surface is deliberately smaller than the Hub's internal/admin surface. Its initial release is read-only and advisory. It provides Hub-owned workflow discovery and planning without acting as a generic relay to third-party services.
 
-## Proposed initial tools
+## Exact initial tool set
 
-### `hub_list_capabilities`
-Purpose: return a concise list of supported public Hub workflows and their requirements.
+### `list_supported_workflows`
+Returns the public workflow catalog. It does not expose the internal registry, admin tools, provider credentials, internal IDs, or debug traces.
 
-Annotations:
-- readOnlyHint: true
-- destructiveHint: false
-- openWorldHint: false
-
-Must not return credentials, provider tokens, internal IDs, debug traces, or hidden tool inventory.
-
-### `hub_connection_status`
-Purpose: report whether a supported provider/workflow is connected and usable for the current authorized Hub user.
-
+### `find_workflow`
 Inputs:
-- `provider_or_workflow`: constrained public enum/string
+- `query`: bounded plain-language text.
+- `limit`: bounded result count.
 
-Annotations:
-- readOnlyHint: true
-- destructiveHint: false
-- openWorldHint: false
+Searches only the in-process approved public workflow catalog. It performs no internet/provider search.
 
-Output is limited to states such as `connected`, `not_connected`, `needs_reauth`, or `unavailable`, plus a user-safe explanation.
+### `explain_workflow`
+Input:
+- `workflow_id`: bounded identifier that must match the public catalog.
 
-### `hub_search_workflows`
-Purpose: search the public catalog of Hub-owned workflows by user intent.
+Returns a user-safe explanation and explicit side-effect boundary. Unknown IDs return `not_found` and are never forwarded to an internal executor.
 
+### `plan_workflow`
+Input:
+- `goal`: bounded plain-language text.
+
+Returns an advisory sequence of reviewable steps. It does not execute a workflow, call a model provider, or modify external state.
+
+### `check_workflow_requirements`
 Inputs:
-- `query`
-- optional bounded `limit`
+- `workflow_id`: supported public workflow identifier.
+- `available_capabilities`: bounded list of capability labels supplied by the caller.
 
-Annotations:
-- readOnlyHint: true
-- destructiveHint: false
-- openWorldHint: false
+Compares only declared workflow requirements with the supplied labels. It does not inspect a Hub account, provider account, token store, OAuth connection, or external service.
 
-This searches only the approved public workflow catalog; it must not reveal internal/admin tools.
+## Required annotations for every initial tool
 
-### `hub_run_workflow`
-Purpose: execute one explicitly approved Hub-owned workflow from a strict allowlist.
+- `readOnlyHint: true`
+- `destructiveHint: false`
+- `openWorldHint: false`
+- `idempotentHint: true`
 
-Inputs:
-- `workflow_id`: must resolve to a public allowlisted workflow
-- workflow-specific structured arguments
+If a future version adds a real external read, write, send, publish, delete, purchase, revoke, or other side effect, that capability must be represented by a new explicit tool with accurate annotations and its own security/review work. Do not silently expand these initial tools.
 
-Annotations depend on each workflow and must be surfaced accurately. The generic entrypoint may only dispatch to workflows whose public metadata has already been approved; it may not accept arbitrary hidden tool IDs, URLs, code, provider method names, or raw credentials.
+## Explicit exclusions
 
-For write/destructive workflows, the public catalog must identify the side effect clearly and the server must enforce any confirmation/authorization boundary required by the workflow.
+The public surface must not expose:
 
-## Explicitly excluded from the public surface
+- generic `execute_tool` or arbitrary internal-tool dispatch,
+- raw provider API passthrough,
+- arbitrary URL fetch/relay,
+- credential/token/password retrieval,
+- OAuth app secrets,
+- debug/admin endpoints,
+- hidden tool inventory,
+- subprocess/system/dynamic code execution,
+- any mechanism intended to bypass provider terms, regional restrictions, rate limits, or access controls.
 
-- Generic `execute_tool` over the full internal registry.
-- Raw provider API passthrough.
-- Arbitrary URL fetch/relay on behalf of a user.
-- Credential/token retrieval or display.
-- Debug/admin endpoints.
-- Provider setup secrets or OAuth app credentials.
-- Hidden tool discovery that exposes internal connectors.
-- Any workflow that circumvents provider terms, geographic restrictions, rate limits, or access controls.
+## Runtime boundaries
 
-## Server routing requirement
+- Standalone FastAPI + MCP Streamable HTTP service.
+- Canonical MCP URL path: `/mcp/` (trailing slash avoids framework redirect ambiguity).
+- Public service pages: `/`, `/about`, `/privacy`, `/terms`, `/support`.
+- Health endpoint: `/health`.
+- OpenAI domain challenge endpoint: `/.well-known/openai-apps-challenge`, disabled with 404 until `OPENAI_APPS_CHALLENGE_TOKEN` is configured.
+- DNS-rebinding protection enabled with an explicit host/origin allowlist; deployment may override with `PUBLIC_MCP_ALLOWED_HOSTS` and `PUBLIC_MCP_ALLOWED_ORIGINS`.
+- Standard defensive HTTP headers are added to responses.
 
-The public MCP endpoint should have a dedicated allowlist, independent from the internal/admin tool registry. A tool becoming available internally must not automatically make it public.
+## Deployment separation
 
-Recommended separation:
-- Internal/admin MCP: existing protected Hub surface.
-- Public ChatGPT MCP: dedicated route/module with only approved public tools.
+The existing protected/internal Hub remains independent. The ChatGPT public surface has a standalone Dockerfile (`tts-pocket/Dockerfile.chatgpt-public`) so it can be deployed without exposing internal/admin tools. Deploying it is a separate release decision and must not replace the existing v0.7.1 production service.
 
-## Response minimization
+## Automated release gates
 
-Every public result should return only the fields required for the user's task. Do not include bearer tokens, refresh tokens, cookies, OAuth codes, client secrets, authorization headers, request/session IDs, stack traces, database keys, or unrelated personal data.
+The GitHub workflow `.github/workflows/chatgpt-plugin-prep.yml` must pass all of the following on the final candidate commit:
 
-## Testing gates before deployment
+1. Python compile checks.
+2. Static public-surface safety checks.
+3. HTTP health/legal/support/security-header checks.
+4. Exact domain-challenge response check using a non-secret CI token.
+5. MCP protocol E2E across the exact five-tool allowlist.
+6. Reviewer-style positive and negative tool cases.
+7. Production-host/origin transport-security simulation.
+8. Standalone Docker build and non-root container smoke test.
 
-- Unknown workflow IDs are rejected.
-- Internal tool IDs cannot be invoked through the public route.
-- Credential-shaped fields are absent from successful and error responses.
-- Read-only tools create no state changes.
-- Write/destructive annotations match actual behavior.
-- Authentication is required wherever user-specific data or actions are involved.
-- Public tool schemas are stable and deterministic enough for reviewer test cases.
-- Existing production/internal MCP behavior remains unchanged until a separate release decision.
+No public deployment or submission should proceed from a commit that fails any gate.
