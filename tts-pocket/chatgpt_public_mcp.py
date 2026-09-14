@@ -12,7 +12,7 @@ from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 APP_NAME = "Universal AI Tool Hub — ChatGPT Public Surface"
-VERSION = "0.2.2-prep"
+VERSION = "0.2.3-prep"
 MAX_QUERY_CHARS = 600
 MAX_GOAL_CHARS = 1200
 MAX_ID_CHARS = 80
@@ -27,21 +27,40 @@ def _csv_env(name: str, defaults: tuple[str, ...]) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _optional_public_hosts() -> tuple[str, ...]:
+    """Return exact deployment hosts injected by supported hosting environments.
+
+    Never accept an arbitrary request Host header here. Only deployment-time
+    environment variables can expand the allowlist.
+    """
+    hosts: list[str] = []
+    for name in ("RENDER_EXTERNAL_HOSTNAME", "PUBLIC_MCP_HOST"):
+        value = os.environ.get(name, "").strip().lower()
+        if value and "/" not in value and "://" not in value and value not in hosts:
+            hosts.append(value)
+    return tuple(hosts)
+
+
+OPTIONAL_PUBLIC_HOSTS = _optional_public_hosts()
+DEFAULT_ALLOWED_HOSTS = (
+    "127.0.0.1:*",
+    "localhost:*",
+    "[::1]:*",
+    PRODUCTION_HOST,
+    *OPTIONAL_PUBLIC_HOSTS,
+)
+DEFAULT_ALLOWED_ORIGINS = (
+    "http://127.0.0.1:*",
+    "http://localhost:*",
+    "http://[::1]:*",
+    f"https://{PRODUCTION_HOST}",
+    *(f"https://{host}" for host in OPTIONAL_PUBLIC_HOSTS),
+)
+
 TRANSPORT_SECURITY = TransportSecuritySettings(
     enable_dns_rebinding_protection=True,
-    allowed_hosts=_csv_env(
-        "PUBLIC_MCP_ALLOWED_HOSTS",
-        ("127.0.0.1:*", "localhost:*", "[::1]:*", PRODUCTION_HOST),
-    ),
-    allowed_origins=_csv_env(
-        "PUBLIC_MCP_ALLOWED_ORIGINS",
-        (
-            "http://127.0.0.1:*",
-            "http://localhost:*",
-            "http://[::1]:*",
-            f"https://{PRODUCTION_HOST}",
-        ),
-    ),
+    allowed_hosts=_csv_env("PUBLIC_MCP_ALLOWED_HOSTS", DEFAULT_ALLOWED_HOSTS),
+    allowed_origins=_csv_env("PUBLIC_MCP_ALLOWED_ORIGINS", DEFAULT_ALLOWED_ORIGINS),
 )
 
 
