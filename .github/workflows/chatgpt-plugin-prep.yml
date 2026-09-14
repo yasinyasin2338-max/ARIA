@@ -9,6 +9,7 @@ on:
       - 'tts-pocket/Dockerfile.chatgpt-public'
       - 'tts-pocket/requirements-chatgpt-public.txt'
       - 'docs/chatgpt-plugin/**'
+      - 'render.yaml'
       - '.github/workflows/chatgpt-plugin-prep.yml'
   pull_request:
     branches: [hub-v071-deploy]
@@ -18,6 +19,7 @@ on:
       - 'tts-pocket/Dockerfile.chatgpt-public'
       - 'tts-pocket/requirements-chatgpt-public.txt'
       - 'docs/chatgpt-plugin/**'
+      - 'render.yaml'
       - '.github/workflows/chatgpt-plugin-prep.yml'
 
 permissions:
@@ -43,6 +45,21 @@ jobs:
           pip-audit -r tts-pocket/requirements-chatgpt-public.txt
           bandit -q -ll tts-pocket/chatgpt_public_mcp.py
 
+      - name: Validate zero-cost Render Blueprint boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Eq '^    runtime: docker$' render.yaml
+          grep -Eq '^    plan: free$' render.yaml
+          grep -Eq '^    autoDeployTrigger: off$' render.yaml
+          grep -Eq '^    healthCheckPath: /health$' render.yaml
+          grep -Eq '^    dockerfilePath: \./tts-pocket/Dockerfile\.chatgpt-public$' render.yaml
+          grep -Eq '^    dockerContext: \./tts-pocket$' render.yaml
+          if grep -Eiq 'plan: (starter|standard|pro|pro_plus|pro_max|pro_ultra|[0-9]+c-)' render.yaml; then
+            echo 'paid Render plan found in zero-cost blueprint'
+            exit 1
+          fi
+
       - name: Compile and run static safety checks
         run: |
           python -m py_compile tts-pocket/chatgpt_public_mcp.py tts-pocket/ci_chatgpt_public_mcp_static.py tts-pocket/ci_chatgpt_public_mcp_e2e.py
@@ -53,7 +70,9 @@ jobs:
         run: |
           set -euo pipefail
           cd tts-pocket
-          OPENAI_APPS_CHALLENGE_TOKEN=ci-challenge-token python -m uvicorn chatgpt_public_mcp:app --host 127.0.0.1 --port 18081 --no-access-log >/tmp/chatgpt-public-mcp.log 2>&1 &
+          RENDER_EXTERNAL_HOSTNAME=aria-chatgpt-public-ci.onrender.com \
+          OPENAI_APPS_CHALLENGE_TOKEN=ci-challenge-token \
+          python -m uvicorn chatgpt_public_mcp:app --host 127.0.0.1 --port 18081 --no-access-log >/tmp/chatgpt-public-mcp.log 2>&1 &
           pid=$!
           cleanup(){ kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; cat /tmp/chatgpt-public-mcp.log || true; }
           trap cleanup EXIT
@@ -83,7 +102,9 @@ jobs:
           echo "$headers" | grep -Fiq 'x-content-type-options: nosniff'
           echo "$headers" | grep -Fiq 'referrer-policy: no-referrer'
 
-          CI_CHATGPT_PUBLIC_BASE=http://127.0.0.1:18081 python ci_chatgpt_public_mcp_e2e.py
+          CI_CHATGPT_PUBLIC_BASE=http://127.0.0.1:18081 \
+          CI_EXTRA_PUBLIC_HOST=aria-chatgpt-public-ci.onrender.com \
+          python ci_chatgpt_public_mcp_e2e.py
 
       - name: Build and smoke-test standalone container
         shell: bash
@@ -96,6 +117,7 @@ jobs:
             --security-opt=no-new-privileges \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m \
             -e PORT=8000 \
+            -e RENDER_EXTERNAL_HOSTNAME=aria-chatgpt-public-ci.onrender.com \
             -e OPENAI_APPS_CHALLENGE_TOKEN=ci-challenge-token \
             -p 18082:8000 \
             aria-chatgpt-public
