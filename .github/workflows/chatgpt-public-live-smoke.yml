@@ -1,0 +1,98 @@
+name: ChatGPT Public Live Smoke
+
+on:
+  push:
+    branches: [chatgpt-public-live-smoke]
+    paths:
+      - '.github/workflows/chatgpt-public-live-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify production Hub and public ChatGPT MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://aria-v4-production.up.railway.app'
+          public="$base/chatgpt-public"
+
+          test "$(curl --retry 5 --retry-delay 2 -sS -o /tmp/ready.json -w '%{http_code}' "$base/ready")" = '200'
+          test "$(curl --retry 5 --retry-delay 2 -sS -o /tmp/public-health.json -w '%{http_code}' "$public/health")" = '200'
+          grep -Fq '"status":"ok"' /tmp/public-health.json
+          grep -Fq '"tool_count":5' /tmp/public-health.json
+          grep -Fq '"surface":"read_only_public"' /tmp/public-health.json
+
+          for path in / /about /privacy /terms /support; do
+            test "$(curl -sS -o /tmp/page.html -w '%{http_code}' "$public$path")" = '200'
+          done
+
+          # Existing private/admin boundary must remain protected.
+          test "$(curl -sS -o /tmp/private-tools.json -w '%{http_code}' "$base/api/tools")" = '401'
+          test "$(curl -sS -o /tmp/private-mcp.json -w '%{http_code}' -X POST "$base/mcp/" -H 'Content-Type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')" = '401'
+
+          # Domain challenge is intentionally unconfigured until OpenAI supplies a token.
+          test "$(curl -sS -o /tmp/challenge.json -w '%{http_code}' "$base/.well-known/openai-apps-challenge")" = '404'
+
+          curl -fsS -X POST "$public/mcp" \
+            -H 'Content-Type: application/json' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"live-smoke","version":"1"}}}' \
+            >/tmp/init.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/init.json'))
+          assert d['jsonrpc']=='2.0' and d['id']==1
+          assert d['result']['protocolVersion']=='2025-06-18'
+          assert d['result']['serverInfo']['name'].startswith('Universal AI Tool Hub')
+          PY
+
+          curl -fsS -X POST "$public/mcp" \
+            -H 'Content-Type: application/json' \
+            --data '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+            >/tmp/tools.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/tools.json'))
+          tools=d['result']['tools']
+          expected={
+              'list_supported_workflows',
+              'find_workflow',
+              'explain_workflow',
+              'plan_workflow',
+              'check_workflow_requirements',
+          }
+          assert {t['name'] for t in tools}==expected
+          assert len(tools)==5
+          for t in tools:
+              a=t['annotations']
+              assert a['readOnlyHint'] is True
+              assert a['openWorldHint'] is False
+              assert a['destructiveHint'] is False
+              assert a['idempotentHint'] is True
+          PY
+
+          curl -fsS -X POST "$public/mcp" \
+            -H 'Content-Type: application/json' \
+            --data '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"plan_workflow","arguments":{"goal":"plan a safe Hub workflow"}}}' \
+            >/tmp/call.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/call.json'))
+          r=d['result']['structuredContent']
+          assert r['status']=='advisory_only'
+          assert r['external_action_executed'] is False
+          assert r['private_account_data_fetched'] is False
+          assert r['credentials_returned'] is False
+          PY
+
+          # Fail closed for hostile Origin on the public MCP route.
+          test "$(curl -sS -o /tmp/bad-origin.json -w '%{http_code}' -X POST "$public/mcp" -H 'Origin: https://attacker.invalid' -H 'Content-Type: application/json' --data '{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}')" = '421'
+
+          echo CHATGPT_PUBLIC_LIVE_SMOKE_OK
