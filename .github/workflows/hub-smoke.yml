@@ -56,6 +56,15 @@ jobs:
           test "$(curl -sS -o /tmp/oauth-app-manager.html -w '%{http_code}' http://127.0.0.1:18000/static/oauth-app-manager.html)" = "200"
           grep -q 'تنظیم OAuth سرویس‌ها' /tmp/oauth-app-manager.html
 
+          test "$(curl -sS -o /tmp/provider-setup.html -w '%{http_code}' http://127.0.0.1:18000/static/provider-setup.html)" = "200"
+          grep -q 'developers/apps/create' /tmp/provider-setup.html
+          grep -q 'کپی همه تنظیمات' /tmp/provider-setup.html
+          grep -q 'No user information' /tmp/provider-setup.html
+
+          test "$(curl -sS -o /tmp/app.js -w '%{http_code}' http://127.0.0.1:18000/static/app.js)" = "200"
+          grep -Fq 'start?browser=1' /tmp/app.js
+          grep -Fq "aria-live','polite'" /tmp/app.js
+
           test "$(curl -sS -o /tmp/hub-index.html -w '%{http_code}' http://127.0.0.1:18000/)" = "200"
           grep -q 'data-hub-admin-links' /tmp/hub-index.html
           grep -q 'مدیریت Token' /tmp/hub-index.html
@@ -89,6 +98,15 @@ jobs:
           test "$(curl -sS -o /tmp/token-helper.html -w '%{http_code}' "$base/static/token-helper.html")" = "200"
           test "$(curl -sS -o /tmp/oauth-app-manager.html -w '%{http_code}' "$base/static/oauth-app-manager.html")" = "200"
           grep -q 'تنظیم OAuth سرویس‌ها' /tmp/oauth-app-manager.html
+
+          test "$(curl -sS -o /tmp/provider-setup.html -w '%{http_code}' "$base/static/provider-setup.html")" = "200"
+          grep -q 'developers/apps/create' /tmp/provider-setup.html
+          grep -q 'کپی همه تنظیمات' /tmp/provider-setup.html
+          grep -q 'No user information' /tmp/provider-setup.html
+
+          test "$(curl -sS -o /tmp/live-app.js -w '%{http_code}' "$base/static/app.js")" = "200"
+          grep -Fq 'start?browser=1' /tmp/live-app.js
+          grep -Fq "aria-live','polite'" /tmp/live-app.js
 
           test "$(curl -sS -o /tmp/live-index.html -w '%{http_code}' "$base/")" = "200"
           grep -q 'data-hub-admin-links' /tmp/live-index.html
