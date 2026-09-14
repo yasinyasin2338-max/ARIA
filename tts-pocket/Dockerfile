@@ -31,6 +31,7 @@ PY
 COPY token-helper.html /app/app/static/token-helper.html
 COPY token-helper.js /app/app/static/token-helper.js
 COPY provider-setup.html /app/app/static/provider-setup.html
+COPY provider-setup.js /app/app/static/provider-setup.js
 COPY oauth-patch.tar.xz.b64 /tmp/oauth-patch.b64
 
 RUN python - <<'PY'
