@@ -7,11 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements-hub.txt /app/requirements-hub.txt
+COPY requirements-chatgpt-public.txt /app/requirements-chatgpt-public.txt
 RUN python -m pip install --upgrade pip \
-    && python -m pip install --no-cache-dir -r /app/requirements-hub.txt \
+    && python -m pip install --no-cache-dir -r /app/requirements-chatgpt-public.txt \
     && groupadd --system publicmcp \
-    && useradd --system --gid publicmcp --home /app publicmcp
+    && useradd --system --gid publicmcp --home /app --shell /usr/sbin/nologin publicmcp
 
 COPY chatgpt_public_mcp.py /app/chatgpt_public_mcp.py
 
@@ -21,4 +21,4 @@ RUN python -m py_compile /app/chatgpt_public_mcp.py \
 USER publicmcp
 EXPOSE 8000
 
-CMD ["sh", "-c", "exec python -m uvicorn chatgpt_public_mcp:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "exec python -m uvicorn chatgpt_public_mcp:app --host 0.0.0.0 --port ${PORT:-8000} --no-access-log"]
