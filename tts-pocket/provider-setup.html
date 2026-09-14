@@ -19,6 +19,13 @@ body{margin:0;background:#0b1020;color:#eef2ff}.wrap{max-width:860px;margin:auto
 <script>
 const origin=location.origin;
 document.getElementById('base').textContent=origin;
+const slackManifest={
+ display_information:{name:'Universal AI Tool Hub',description:'Read-only Slack connector for Universal AI Tool Hub'},
+ features:{bot_user:{display_name:'Universal AI Tool Hub',always_online:false}},
+ oauth_config:{redirect_urls:[origin+'/api/oauth/slack/callback'],scopes:{bot:['channels:read','users:read']}},
+ settings:{org_deploy_enabled:false,socket_mode_enabled:false,token_rotation_enabled:false}
+};
+const slackManifestUrl='https://api.slack.com/apps?new_app=1&manifest_json='+encodeURIComponent(JSON.stringify(slackManifest));
 const providers=[
  {k:'github',n:'GitHub',url:'https://github.com/settings/applications/new',label:'ساخت OAuth App در GitHub',fields:[
   'Application name: Universal AI Tool Hub',
@@ -35,12 +42,15 @@ const providers=[
  {k:'microsoft',n:'Microsoft',url:'https://entra.microsoft.com/',label:'Microsoft Entra',fields:[
   'App registration → Platform: Web',
   'Redirect URI: '+origin+'/api/oauth/microsoft/callback',
-  'Delegated permissions: User.Read, Mail.Read, Files.Read, Calendars.Read, offline_access, openid, profile, email'
+  'Delegated Microsoft Graph permissions: User.Read, Mail.Read, Files.Read, Calendars.Read',
+  'OAuth/OIDC scopes used by Hub: offline_access, openid, profile, email',
+  'Use delegated permissions, not application permissions, for the current signed-in-user connector'
  ]},
- {k:'slack',n:'Slack',url:'https://api.slack.com/apps',label:'Slack Apps',fields:[
-  'Create an app for the workspace you want to connect',
+ {k:'slack',n:'Slack',url:'https://api.slack.com/apps',label:'Slack Apps',actionUrl:slackManifestUrl,actionLabel:'ساخت Slack App با تنظیمات آماده',fields:[
+  'Preferred: use the purple button above; Hub pre-fills the app name, callback and minimal scopes through an official Slack App Manifest',
   'OAuth Redirect URL: '+origin+'/api/oauth/slack/callback',
-  'Bot/User scopes used by Hub: channels:read, users:read'
+  'Bot Token Scopes used by Hub: channels:read, users:read',
+  'No message-write scope is required by the current Hub Slack tool'
  ]},
  {k:'notion',n:'Notion',url:'https://app.notion.com/developers/connections',label:'Notion Developer Connections',fields:[
   'Authentication method: OAuth',
@@ -54,12 +64,14 @@ const providers=[
   'App name: Universal AI Tool Hub',
   'OAuth 2 Redirect URI: '+origin+'/api/oauth/dropbox/callback',
   'Permissions: account_info.read, files.metadata.read, files.content.read, sharing.read',
+  'Hub requests token_access_type=offline so Dropbox can issue a refresh token',
   'No write permission is required by the current Hub Dropbox tool'
  ]},
  {k:'atlassian',n:'Atlassian',url:'https://developer.atlassian.com/console/myapps/',label:'Atlassian Developer Console',fields:[
   'OAuth 2.0 (3LO)',
   'Callback URL: '+origin+'/api/oauth/atlassian/callback',
-  'Scopes used by Hub: read:jira-work, read:jira-user, read:space:confluence, offline_access'
+  'Scopes used by Hub: read:jira-work, read:jira-user, read:space:confluence, offline_access',
+  'Authorization audience used by Hub: api.atlassian.com; prompt=consent'
  ]}
 ];
 function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
@@ -69,7 +81,8 @@ for(const p of providers){
  const cb=origin+'/api/oauth/'+p.k+'/callback';
  const all=[...p.fields].join('\n');
  const div=document.createElement('section'); div.className='card';
- div.innerHTML=`<h2>${esc(p.n)}</h2><div class="muted">Callback URL</div><div class="cb">${esc(cb)}</div><div class="row"><button class="copy-cb">کپی Callback</button><button class="copy-all secondary">کپی همه تنظیمات</button><a class="btn secondary" target="_blank" rel="noopener" href="${p.url}">باز کردن ${esc(p.label)}</a></div><div style="margin-top:12px">${p.fields.map(x=>`<div class="step">• ${esc(x)}</div>`).join('')}</div>`;
+ const action=p.actionUrl?`<a class="btn" target="_blank" rel="noopener" href="${p.actionUrl}">${esc(p.actionLabel)}</a>`:'';
+ div.innerHTML=`<h2>${esc(p.n)}</h2><div class="muted">Callback URL</div><div class="cb">${esc(cb)}</div><div class="row">${action}<button class="copy-cb">کپی Callback</button><button class="copy-all secondary">کپی همه تنظیمات</button><a class="btn secondary" target="_blank" rel="noopener" href="${p.url}">باز کردن ${esc(p.label)}</a></div><div style="margin-top:12px">${p.fields.map(x=>`<div class="step">• ${esc(x)}</div>`).join('')}</div>`;
  div.querySelector('.copy-cb').onclick=e=>copyText(cb,e.currentTarget);
  div.querySelector('.copy-all').onclick=e=>copyText(all,e.currentTarget);
  root.appendChild(div);
