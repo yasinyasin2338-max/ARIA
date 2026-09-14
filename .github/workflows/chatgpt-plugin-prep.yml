@@ -6,6 +6,7 @@ on:
     paths:
       - 'tts-pocket/chatgpt_public_mcp.py'
       - 'tts-pocket/ci_chatgpt_public_mcp_*.py'
+      - 'tts-pocket/Dockerfile.chatgpt-public'
       - 'docs/chatgpt-plugin/**'
       - '.github/workflows/chatgpt-plugin-prep.yml'
   pull_request:
@@ -13,6 +14,7 @@ on:
     paths:
       - 'tts-pocket/chatgpt_public_mcp.py'
       - 'tts-pocket/ci_chatgpt_public_mcp_*.py'
+      - 'tts-pocket/Dockerfile.chatgpt-public'
       - 'docs/chatgpt-plugin/**'
       - '.github/workflows/chatgpt-plugin-prep.yml'
 
@@ -22,7 +24,7 @@ permissions:
 jobs:
   validate-public-mcp:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 
@@ -71,3 +73,20 @@ jobs:
           echo "$headers" | grep -Fiq 'referrer-policy: no-referrer'
 
           CI_CHATGPT_PUBLIC_BASE=http://127.0.0.1:18081 python ci_chatgpt_public_mcp_e2e.py
+
+      - name: Build and smoke-test standalone container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -f tts-pocket/Dockerfile.chatgpt-public -t aria-chatgpt-public ./tts-pocket
+          docker run -d --name aria-chatgpt-public-test -e PORT=8000 -p 18082:8000 aria-chatgpt-public
+          cleanup(){ docker logs aria-chatgpt-public-test || true; docker rm -f aria-chatgpt-public-test >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:18082/health >/tmp/container-health.json; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18082/health >/tmp/container-health.json
+          grep -Fq '"status":"ok"' /tmp/container-health.json
+          grep -Fq '"surface":"read_only_public_prep"' /tmp/container-health.json
+          test "$(docker inspect -f '{{.Config.User}}' aria-chatgpt-public-test)" = "publicmcp"
