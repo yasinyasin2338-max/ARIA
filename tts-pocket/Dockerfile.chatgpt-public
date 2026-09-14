@@ -1,0 +1,24 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PORT=8000
+
+WORKDIR /app
+
+COPY requirements-hub.txt /app/requirements-hub.txt
+RUN python -m pip install --upgrade pip \
+    && python -m pip install --no-cache-dir -r /app/requirements-hub.txt \
+    && groupadd --system publicmcp \
+    && useradd --system --gid publicmcp --home /app publicmcp
+
+COPY chatgpt_public_mcp.py /app/chatgpt_public_mcp.py
+
+RUN python -m py_compile /app/chatgpt_public_mcp.py \
+    && chown -R publicmcp:publicmcp /app
+
+USER publicmcp
+EXPOSE 8000
+
+CMD ["sh", "-c", "exec python -m uvicorn chatgpt_public_mcp:app --host 0.0.0.0 --port ${PORT:-8000}"]
