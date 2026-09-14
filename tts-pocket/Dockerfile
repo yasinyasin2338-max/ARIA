@@ -106,10 +106,11 @@ p.write_text(html)
 PY
 
 COPY secure_entrypoint.py /app/secure_entrypoint.py
+COPY chatgpt_public_bridge.py /app/chatgpt_public_bridge.py
 
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir '.[production]' \
-    && python -m py_compile /app/oauth_entry.py /app/connector_entry.py /app/secure_entrypoint.py /app/app/core/oauth_server.py /app/app/config.py /app/app/models/gateway.py /app/app/connectors/oauth/service.py /app/app/container.py \
+    && python -m py_compile /app/oauth_entry.py /app/connector_entry.py /app/secure_entrypoint.py /app/chatgpt_public_bridge.py /app/app/core/oauth_server.py /app/app/config.py /app/app/models/gateway.py /app/app/connectors/oauth/service.py /app/app/container.py \
     && groupadd --system hub \
     && useradd --system --gid hub --home /app hub \
     && mkdir -p /app/data \
