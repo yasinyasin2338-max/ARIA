@@ -1,45 +1,63 @@
-# Review Test Cases Draft
+# Reviewer Test Cases — ChatGPT Public MCP
 
-These are submission-preparation cases. Replace placeholder workflow names with the final reviewed public MCP tool names before submission.
+Status: engineering-ready draft for the exact read-only public surface in `tts-pocket/chatgpt_public_mcp.py`.
+
+The public surface currently exposes exactly five tools and performs no third-party action, account lookup, purchase, write, deletion, or credential retrieval.
 
 ## Positive cases
 
 1. **List supported workflows**
-   - User intent: Ask which Hub workflows are available.
-   - Expected: Return only public/reviewed workflows and concise descriptions. Never include hidden/admin tools or credentials.
+   - Tool: `list_supported_workflows`
+   - Input: none.
+   - Expected: status `ok`; returns only the public workflow catalog; includes `external_action_executed: false`; no hidden/admin tool inventory or credentials.
 
-2. **Connection status**
-   - User intent: Ask whether a supported connection is configured.
-   - Expected: Return a minimal status such as connected/not connected/needs reauthorization. Do not return access tokens, refresh tokens, client secrets, internal IDs, or debug payloads.
+2. **Find a workflow for a user goal**
+   - Tool: `find_workflow`
+   - Input: `query = "plan a safe workflow"`, bounded `limit`.
+   - Expected: status `ok`; `plan-workflow` appears among matches; no external action is executed.
 
-3. **Read-only workflow selection**
-   - User intent: Ask the Hub to choose an appropriate read-only workflow for a task.
-   - Expected: Select only a supported public workflow and describe its scope before execution.
+3. **Explain a supported workflow**
+   - Tool: `explain_workflow`
+   - Input: `workflow_id = "plan-workflow"`.
+   - Expected: status `ok`; side effects are explicitly `none`; `credentials_returned`, `private_account_data_fetched`, and `external_action_executed` are false.
 
-4. **Read-only workflow execution**
-   - User intent: Run a supported read-only workflow.
-   - Expected: Return only task-relevant output and no unrelated personal or diagnostic fields.
+4. **Create an advisory workflow plan**
+   - Tool: `plan_workflow`
+   - Input: a short plain-language goal.
+   - Expected: status `advisory_only`; returns a small reviewable sequence of steps and a supported workflow recommendation; does not contact an external service.
 
-5. **Safe model/workflow routing**
-   - User intent: Ask the Hub to route a request to a supported model/workflow.
-   - Expected: Use only providers and capabilities permitted for the public plugin, return a concise result, and avoid exposing provider credentials or internal routing metadata.
+5. **Check declared workflow requirements**
+   - Tool: `check_workflow_requirements`
+   - Input: a supported `workflow_id` plus user-supplied capability labels.
+   - Expected: returns `ready` or `missing_requirements` based only on the supplied labels and the public workflow definition; source is `user_supplied_capability_labels_only`; no private account data is fetched.
 
 ## Negative cases
 
-1. **Credential disclosure request**
-   - User asks for stored tokens, API keys, OAuth secrets, or passwords.
-   - Expected: Refuse to disclose secrets and do not include them in tool output.
+1. **Empty workflow-search query**
+   - Tool: `find_workflow`
+   - Input: empty query.
+   - Expected: `invalid_input`; no fallback external search or hidden-tool discovery occurs.
 
-2. **Unsupported arbitrary-tool execution**
-   - User asks to invoke an internal/admin tool or arbitrary provider action not explicitly exposed in the public plugin.
-   - Expected: Do not route through a generic hidden executor. Explain that the action is not available through the public plugin surface.
+2. **Unknown workflow ID**
+   - Tool: `explain_workflow` or `check_workflow_requirements`
+   - Input: `workflow_id = "does-not-exist"`.
+   - Expected: `not_found`; the server does not route the unknown ID into an internal registry or generic executor.
 
-3. **Ambiguous destructive action**
-   - User asks for an action that may delete, overwrite, send, publish, revoke, or otherwise create an irreversible external effect without enough detail.
-   - Expected: Do not perform the action. Require explicit scope and rely on the final tool's destructive/write metadata and ChatGPT approval flow.
+3. **Credential/arbitrary-action request**
+   - User intent: request stored OAuth tokens, API keys, passwords, hidden tools, arbitrary URLs, or an unlisted provider action.
+   - Expected: no public tool exists that can retrieve or execute those requests. The exact scanned tool list remains the five explicit read-only tools above.
 
-## Reviewer notes
+## Metadata checks
 
-- Every test must be rerun against the exact production MCP snapshot scanned in the OpenAI submission portal.
-- Expected responses should not depend on private demo data unless reviewer credentials and deterministic seed data are provided.
-- The reviewer account must not require MFA, SMS, email confirmation, or private-network access.
+Every public tool must advertise:
+
+- `readOnlyHint: true`
+- `destructiveHint: false`
+- `openWorldHint: false`
+- `idempotentHint: true`
+
+## Automated coverage
+
+`tts-pocket/ci_chatgpt_public_mcp_e2e.py` executes all five positive protocol paths plus the first two negative cases. `tts-pocket/ci_chatgpt_public_mcp_static.py` verifies that generic execution, credential-shaped implementation markers, system/subprocess execution, and unsafe dynamic execution are absent from the public module.
+
+Before submission, rerun these cases against the exact public HTTPS MCP URL scanned by OpenAI. If the public tool set changes, update this document and the automated tests before submission.
