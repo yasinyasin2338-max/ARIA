@@ -15,7 +15,7 @@ jobs:
       - name: Build staged Hub image
         run: docker build -t hub-oauth-test ./tts-pocket
 
-      - name: Run staged Hub OAuth, model, connector-manager, mobile UI and privilege-drop smoke tests
+      - name: Run staged Hub OAuth, MCP, model, connector-manager, mobile UI and privilege-drop smoke tests
         shell: bash
         run: |
           set -euo pipefail
@@ -57,9 +57,18 @@ jobs:
           grep -q 'تنظیم OAuth سرویس‌ها' /tmp/oauth-app-manager.html
 
           test "$(curl -sS -o /tmp/provider-setup.html -w '%{http_code}' http://127.0.0.1:18000/static/provider-setup.html)" = "200"
-          grep -q 'developers/apps/create' /tmp/provider-setup.html
-          grep -q 'کپی همه تنظیمات' /tmp/provider-setup.html
-          grep -q 'No user information' /tmp/provider-setup.html
+          grep -Fq '<script src="/static/provider-setup.js" defer></script>' /tmp/provider-setup.html
+          grep -q 'راهنمای اتصال و نهایی‌سازی سرویس‌ها' /tmp/provider-setup.html
+          if grep -Eq '<script[^>]*>[^<]+' /tmp/provider-setup.html; then echo 'inline provider script found'; exit 1; fi
+
+          test "$(curl -sS -o /tmp/provider-setup.js -w '%{http_code}' http://127.0.0.1:18000/static/provider-setup.js)" = "200"
+          grep -Fq '/api/oauth-apps' /tmp/provider-setup.js
+          grep -Fq '/app-config' /tmp/provider-setup.js
+          grep -Fq 'start?browser=1' /tmp/provider-setup.js
+          grep -Fq 'Yasin.aris.sayeh' /tmp/provider-setup.js
+          grep -Fq 'developers/apps/create' /tmp/provider-setup.js
+          grep -Fq 'No user information' /tmp/provider-setup.js
+          node --check /tmp/provider-setup.js
 
           test "$(curl -sS -o /tmp/app.js -w '%{http_code}' http://127.0.0.1:18000/static/app.js)" = "200"
           grep -Fq 'start?browser=1' /tmp/app.js
