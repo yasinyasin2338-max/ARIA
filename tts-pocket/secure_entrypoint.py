@@ -50,7 +50,10 @@ def _is_browser_oauth_connect(scope) -> bool:
     if scope.get("type") != "http" or scope.get("method") != "GET":
         return False
     path = scope.get("path", "")
-    if not (path.startswith("/api/oauth/") and path.endswith("/connect")):
+    if not (
+        path.startswith("/api/oauth/")
+        and (path.endswith("/connect") or path.endswith("/start"))
+    ):
         return False
     headers = {k.lower(): v for k, v in scope.get("headers", [])}
     accept = headers.get(b"accept", b"").lower()
