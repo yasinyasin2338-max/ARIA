@@ -53,6 +53,8 @@ assert "MAX_QUERY_CHARS" in text and "MAX_GOAL_CHARS" in text
 assert "TransportSecuritySettings" in text
 assert "PUBLIC_MCP_ALLOWED_HOSTS" in text
 assert "PUBLIC_MCP_ALLOWED_ORIGINS" in text
+assert "RENDER_EXTERNAL_HOSTNAME" in text
+assert "PUBLIC_MCP_HOST" in text
 assert "OPENAI_APPS_CHALLENGE_TOKEN" in text
 assert "Cache-Control" in text
 assert "X-Content-Type-Options" in text
