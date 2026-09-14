@@ -2,19 +2,47 @@ from __future__ import annotations
 
 import contextlib
 import html
+import os
 from dataclasses import dataclass
 from typing import Iterable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from mcp.server import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 
 APP_NAME = "Universal AI Tool Hub — ChatGPT Public Surface"
-VERSION = "0.2.0-prep"
+VERSION = "0.2.1-prep"
 MAX_QUERY_CHARS = 600
 MAX_GOAL_CHARS = 1200
 MAX_ID_CHARS = 80
 MAX_LIST_ITEMS = 20
+PRODUCTION_HOST = "aria-v4-production.up.railway.app"
+
+
+def _csv_env(name: str, defaults: tuple[str, ...]) -> list[str]:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return list(defaults)
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+TRANSPORT_SECURITY = TransportSecuritySettings(
+    enable_dns_rebinding_protection=True,
+    allowed_hosts=_csv_env(
+        "PUBLIC_MCP_ALLOWED_HOSTS",
+        ("127.0.0.1:*", "localhost:*", "[::1]:*", PRODUCTION_HOST),
+    ),
+    allowed_origins=_csv_env(
+        "PUBLIC_MCP_ALLOWED_ORIGINS",
+        (
+            "http://127.0.0.1:*",
+            "http://localhost:*",
+            "http://[::1]:*",
+            f"https://{PRODUCTION_HOST}",
+        ),
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -241,6 +269,7 @@ app.mount(
         streamable_http_path="/",
         stateless_http=True,
         json_response=True,
+        transport_security=TRANSPORT_SECURITY,
     ),
 )
 
