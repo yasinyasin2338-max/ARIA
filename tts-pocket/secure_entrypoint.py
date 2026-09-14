@@ -1,3 +1,4 @@
+import json
 import os
 import pwd
 import grp
@@ -45,31 +46,75 @@ def _patch_mobile_navigation() -> None:
     path.write_text(text.replace(old, new, 1))
 
 
-async def app(scope, receive, send):
-    """Wrap the Hub ASGI app and narrowly allow inline event attributes.
+def _is_browser_oauth_connect(scope) -> bool:
+    if scope.get("type") != "http" or scope.get("method") != "GET":
+        return False
+    path = scope.get("path", "")
+    if not (path.startswith("/api/oauth/") and path.endswith("/connect")):
+        return False
+    headers = {k.lower(): v for k, v in scope.get("headers", [])}
+    accept = headers.get(b"accept", b"").lower()
+    return b"text/html" in accept
 
-    The v0.7.1 UI uses inline onclick handlers while the production CSP blocks
-    all inline script. Keep inline <script> blocked, but allow script attributes
-    so the existing mobile UI controls (login, navigation, actions) work.
-    """
+
+def _apply_csp(headers):
+    patched = []
+    for name, value in headers:
+        if name.lower() == b"content-security-policy":
+            text = value.decode("latin-1")
+            old = "script-src 'self'; frame-ancestors 'none'"
+            new = "script-src 'self'; script-src-attr 'unsafe-inline'; frame-ancestors 'none'"
+            if old in text:
+                text = text.replace(old, new, 1)
+            value = text.encode("latin-1")
+        patched.append((name, value))
+    return patched
+
+
+async def app(scope, receive, send):
+    """Production wrapper for CSP and browser-friendly OAuth navigation."""
     global _UPSTREAM_APP
     if _UPSTREAM_APP is None:
         from connector_entry import app as connector_app
         _UPSTREAM_APP = connector_app
 
+    if _is_browser_oauth_connect(scope):
+        captured = []
+
+        async def capture(message):
+            captured.append(message)
+
+        await _UPSTREAM_APP(scope, receive, capture)
+
+        start = next((m for m in captured if m.get("type") == "http.response.start"), None)
+        body = b"".join(m.get("body", b"") for m in captured if m.get("type") == "http.response.body")
+        if start and start.get("status") == 200:
+            try:
+                payload = json.loads(body.decode("utf-8"))
+                authorization_url = payload.get("authorization_url")
+            except Exception:
+                authorization_url = None
+            if isinstance(authorization_url, str) and authorization_url.startswith(("https://", "http://")):
+                await send({
+                    "type": "http.response.start",
+                    "status": 302,
+                    "headers": [
+                        (b"location", authorization_url.encode("utf-8")),
+                        (b"cache-control", b"no-store"),
+                    ],
+                })
+                await send({"type": "http.response.body", "body": b""})
+                return
+
+        for message in captured:
+            if message.get("type") == "http.response.start":
+                message = {**message, "headers": _apply_csp(message.get("headers", []))}
+            await send(message)
+        return
+
     async def send_with_csp(message):
         if message.get("type") == "http.response.start":
-            headers = []
-            for name, value in message.get("headers", []):
-                if name.lower() == b"content-security-policy":
-                    text = value.decode("latin-1")
-                    old = "script-src 'self'; frame-ancestors 'none'"
-                    new = "script-src 'self'; script-src-attr 'unsafe-inline'; frame-ancestors 'none'"
-                    if old in text:
-                        text = text.replace(old, new, 1)
-                    value = text.encode("latin-1")
-                headers.append((name, value))
-            message = {**message, "headers": headers}
+            message = {**message, "headers": _apply_csp(message.get("headers", []))}
         await send(message)
 
     await _UPSTREAM_APP(scope, receive, send_with_csp)
