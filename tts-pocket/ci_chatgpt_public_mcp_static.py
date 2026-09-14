@@ -36,13 +36,24 @@ for forbidden in (
 ):
     assert forbidden not in text, forbidden
 
-for route in ('"/mcp"', '"/health"', '"/privacy"', '"/terms"', '"/support"'):
+for route in (
+    '"/mcp"',
+    '"/health"',
+    '"/privacy"',
+    '"/terms"',
+    '"/support"',
+    '"/.well-known/openai-apps-challenge"',
+):
     assert route in text, route
 
 assert "external_action_executed" in text
 assert "credentials_returned" in text
 assert "private_account_data_fetched" in text
 assert "MAX_QUERY_CHARS" in text and "MAX_GOAL_CHARS" in text
+assert "TransportSecuritySettings" in text
+assert "PUBLIC_MCP_ALLOWED_HOSTS" in text
+assert "PUBLIC_MCP_ALLOWED_ORIGINS" in text
+assert "OPENAI_APPS_CHALLENGE_TOKEN" in text
 assert "Cache-Control" in text
 assert "X-Content-Type-Options" in text
 assert "Referrer-Policy" in text
