@@ -8,6 +8,8 @@ from urllib.parse import parse_qs
 DATA_DIR = Path(os.environ.get("UTH_DATA_DIR", "/app/data"))
 USER = os.environ.get("UTH_RUNTIME_USER", "hub")
 _UPSTREAM_APP = None
+_PUBLIC_APP = None
+_PUBLIC_PREFIX = "/chatgpt-public"
 
 
 def _chown_tree(path: Path, uid: int, gid: int) -> None:
@@ -96,6 +98,30 @@ def _is_browser_oauth_connect(scope) -> bool:
     return b"text/html" in accept
 
 
+def _is_public_chatgpt_route(scope) -> bool:
+    if scope.get("type") != "http":
+        return False
+    path = scope.get("path", "")
+    return (
+        path == "/.well-known/openai-apps-challenge"
+        or path == _PUBLIC_PREFIX
+        or path.startswith(_PUBLIC_PREFIX + "/")
+    )
+
+
+def _public_scope(scope):
+    path = scope.get("path", "")
+    if path == "/.well-known/openai-apps-challenge":
+        return scope
+
+    stripped = path[len(_PUBLIC_PREFIX):] or "/"
+    child = dict(scope)
+    child["root_path"] = scope.get("root_path", "") + _PUBLIC_PREFIX
+    child["path"] = stripped
+    child["raw_path"] = stripped.encode("utf-8")
+    return child
+
+
 def _apply_csp(headers):
     patched = []
     for name, value in headers:
@@ -111,8 +137,16 @@ def _apply_csp(headers):
 
 
 async def app(scope, receive, send):
-    """Production wrapper for CSP and browser-friendly OAuth navigation."""
-    global _UPSTREAM_APP
+    """Production wrapper for Hub routes plus a narrow public ChatGPT MCP."""
+    global _UPSTREAM_APP, _PUBLIC_APP
+
+    if _is_public_chatgpt_route(scope):
+        if _PUBLIC_APP is None:
+            from chatgpt_public_bridge import app as public_app
+            _PUBLIC_APP = public_app
+        await _PUBLIC_APP(_public_scope(scope), receive, send)
+        return
+
     if _UPSTREAM_APP is None:
         from connector_entry import app as connector_app
         _UPSTREAM_APP = connector_app
