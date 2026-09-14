@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import json
@@ -116,6 +117,34 @@ with urllib.request.urlopen(req, timeout=10) as r:
     assert r.status == 200
     tools = json.loads(r.read().decode())
     assert isinstance(tools, list)
+
+async def mcp_end_to_end():
+    try:
+        import httpx2 as httpx_client
+    except ImportError:
+        import httpx as httpx_client
+    from mcp import Client
+    try:
+        from mcp.client.streamable_http import streamable_http_client
+    except ImportError:
+        from mcp.client.streamable_http import streamablehttp_client as streamable_http_client
+
+    async with httpx_client.AsyncClient(
+        headers={"Authorization": "Bearer " + tok["access_token"]},
+        timeout=httpx_client.Timeout(15.0, read=30.0),
+    ) as http_client:
+        transport = streamable_http_client(resource, http_client=http_client)
+        async with Client(transport) as mcp_client:
+            result = await mcp_client.list_tools()
+            names = {tool.name for tool in result.tools}
+            assert "search_tools" in names, names
+            assert "list_tools" in names, names
+            assert "execute_tool" in names, names
+            assert "generate_with_model" in names, names
+            assert len(names) >= 10, names
+
+asyncio.run(mcp_end_to_end())
+print("MCP_STREAMABLE_HTTP_E2E_OK")
 
 rs, _, rbody = post_form("/oauth/token", token_payload)
 assert rs == 400, rbody
