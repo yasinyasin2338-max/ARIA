@@ -4,6 +4,7 @@ import os
 BASE = os.environ.get("CI_CHATGPT_PUBLIC_BASE", "http://127.0.0.1:18081").rstrip("/")
 RESOURCE = BASE + "/mcp/"
 PRODUCTION_HOST = "aria-v4-production.up.railway.app"
+EXTRA_PUBLIC_HOST = os.environ.get("CI_EXTRA_PUBLIC_HOST", "").strip()
 
 
 async def exercise_client(httpx_client, headers=None) -> None:
@@ -84,6 +85,14 @@ async def main() -> None:
             "Origin": f"https://{PRODUCTION_HOST}",
         },
     )
+    if EXTRA_PUBLIC_HOST:
+        await exercise_client(
+            httpx_client,
+            headers={
+                "Host": EXTRA_PUBLIC_HOST,
+                "Origin": f"https://{EXTRA_PUBLIC_HOST}",
+            },
+        )
 
     print("CHATGPT_PUBLIC_MCP_E2E_OK")
 
