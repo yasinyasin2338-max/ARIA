@@ -1,0 +1,134 @@
+name: ChatGPT Plugin Prep Check
+
+on:
+  push:
+    branches: [chatgpt-plugin-prep]
+    paths:
+      - 'tts-pocket/chatgpt_public_mcp.py'
+      - 'tts-pocket/ci_chatgpt_public_mcp_*.py'
+      - 'tts-pocket/Dockerfile.chatgpt-public'
+      - 'tts-pocket/requirements-chatgpt-public.txt'
+      - 'docs/chatgpt-plugin/**'
+      - 'render.yaml'
+      - '.github/workflows/chatgpt-plugin-prep.yml'
+  pull_request:
+    branches: [hub-v071-deploy]
+    paths:
+      - 'tts-pocket/chatgpt_public_mcp.py'
+      - 'tts-pocket/ci_chatgpt_public_mcp_*.py'
+      - 'tts-pocket/Dockerfile.chatgpt-public'
+      - 'tts-pocket/requirements-chatgpt-public.txt'
+      - 'docs/chatgpt-plugin/**'
+      - 'render.yaml'
+      - '.github/workflows/chatgpt-plugin-prep.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-public-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned public MCP dependencies
+        run: python -m pip install -r tts-pocket/requirements-chatgpt-public.txt
+
+      - name: Audit dependencies and public source
+        run: |
+          python -m pip install pip-audit bandit
+          pip-audit -r tts-pocket/requirements-chatgpt-public.txt
+          bandit -q -ll tts-pocket/chatgpt_public_mcp.py
+
+      - name: Validate zero-cost Render Blueprint boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Eq '^    runtime: docker$' render.yaml
+          grep -Eq '^    plan: free$' render.yaml
+          grep -Eq '^    autoDeployTrigger: off$' render.yaml
+          grep -Eq '^    healthCheckPath: /health$' render.yaml
+          grep -Eq '^    dockerfilePath: \./tts-pocket/Dockerfile\.chatgpt-public$' render.yaml
+          grep -Eq '^    dockerContext: \./tts-pocket$' render.yaml
+          if grep -Eiq 'plan: (starter|standard|pro|pro_plus|pro_max|pro_ultra|[0-9]+c-)' render.yaml; then
+            echo 'paid Render plan found in zero-cost blueprint'
+            exit 1
+          fi
+
+      - name: Compile and run static safety checks
+        run: |
+          python -m py_compile tts-pocket/chatgpt_public_mcp.py tts-pocket/ci_chatgpt_public_mcp_static.py tts-pocket/ci_chatgpt_public_mcp_e2e.py
+          python tts-pocket/ci_chatgpt_public_mcp_static.py
+
+      - name: Run public MCP HTTP and protocol checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tts-pocket
+          RENDER_EXTERNAL_HOSTNAME=aria-chatgpt-public-ci.onrender.com \
+          OPENAI_APPS_CHALLENGE_TOKEN=ci-challenge-token \
+          python -m uvicorn chatgpt_public_mcp:app --host 127.0.0.1 --port 18081 --no-access-log >/tmp/chatgpt-public-mcp.log 2>&1 &
+          pid=$!
+          cleanup(){ kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; cat /tmp/chatgpt-public-mcp.log || true; }
+          trap cleanup EXIT
+
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:18081/health >/tmp/chatgpt-health.json; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18081/health >/tmp/chatgpt-health.json
+          grep -Fq '"status":"ok"' /tmp/chatgpt-health.json
+          grep -Fq '"tool_count":5' /tmp/chatgpt-health.json
+
+          for path in / /about /privacy /terms /support; do
+            code=$(curl -sS -o "/tmp/page$(echo "$path" | tr '/' '_').html" -w '%{http_code}' "http://127.0.0.1:18081$path")
+            test "$code" = "200"
+          done
+          grep -Fq 'read-only' /tmp/page_.html
+          grep -Fq 'do not fetch private Hub account data' /tmp/page_privacy.html
+          grep -Fq 'does not execute third-party actions' /tmp/page_terms.html
+          grep -Fq 'Never include passwords' /tmp/page_support.html
+
+          challenge=$(curl -fsS http://127.0.0.1:18081/.well-known/openai-apps-challenge)
+          test "$challenge" = "ci-challenge-token"
+
+          headers=$(curl -sS -D - -o /dev/null http://127.0.0.1:18081/health | tr -d '\r')
+          echo "$headers" | grep -Fiq 'cache-control: no-store'
+          echo "$headers" | grep -Fiq 'x-content-type-options: nosniff'
+          echo "$headers" | grep -Fiq 'referrer-policy: no-referrer'
+
+          CI_CHATGPT_PUBLIC_BASE=http://127.0.0.1:18081 \
+          CI_EXTRA_PUBLIC_HOST=aria-chatgpt-public-ci.onrender.com \
+          python ci_chatgpt_public_mcp_e2e.py
+
+      - name: Build and smoke-test standalone container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -f tts-pocket/Dockerfile.chatgpt-public -t aria-chatgpt-public ./tts-pocket
+          docker run -d --name aria-chatgpt-public-test \
+            --read-only \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            -e PORT=8000 \
+            -e RENDER_EXTERNAL_HOSTNAME=aria-chatgpt-public-ci.onrender.com \
+            -e OPENAI_APPS_CHALLENGE_TOKEN=ci-challenge-token \
+            -p 18082:8000 \
+            aria-chatgpt-public
+          cleanup(){ docker logs aria-chatgpt-public-test || true; docker rm -f aria-chatgpt-public-test >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:18082/health >/tmp/container-health.json; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18082/health >/tmp/container-health.json
+          grep -Fq '"status":"ok"' /tmp/container-health.json
+          grep -Fq '"surface":"read_only_public_prep"' /tmp/container-health.json
+          test "$(curl -fsS http://127.0.0.1:18082/.well-known/openai-apps-challenge)" = "ci-challenge-token"
+          test "$(docker inspect -f '{{.Config.User}}' aria-chatgpt-public-test)" = "publicmcp"
