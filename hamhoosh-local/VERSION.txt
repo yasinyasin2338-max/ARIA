@@ -1,0 +1,3 @@
+HamHoosh 1.2.0 Pro
+Default: Qwen3 4B Q4_K_M
+Turbo: Qwen3 1.7B Q4_K_M
