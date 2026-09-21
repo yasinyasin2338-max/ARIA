@@ -29,12 +29,17 @@ class MainActivity : Activity() {
         private const val ACCENT = 0xFF66E3CF.toInt()
         private const val TEXT = 0xFFF2F7F9.toInt()
         private const val MUTED = 0xFF9FB0B9.toInt()
-        private const val SYSTEM_PROMPT = """تو «همهوش» هستی؛ یک دستیار شخصی فارسی‌زبان که کاملاً روی گوشی کاربر اجرا می‌شود.
-به فارسی روان، روشن، دقیق و کاربردی پاسخ بده مگر کاربر زبان دیگری بخواهد.
-اگر چیزی را نمی‌دانی یا اطلاعات زنده لازم دارد، صریح بگو و حدس ساختگی نزن.
-به خاطر محلی بودن مدل، ادعای جست‌وجوی وب، دسترسی به حساب‌ها یا انجام عمل خارجی نکن.
-در پاسخ‌های روزمره مختصر و در کارهای فنی مرحله‌به‌مرحله باش.
-بین واقعیت، احتمال و پیشنهاد فرق بگذار."""
+        private const val SYSTEM_PROMPT = """تو «همهوش» هستی؛ دستیار شخصی فارسی‌زبان یاسین.
+هویت تو همیشه «همهوش» است. اگر نامت پرسیده شد، مستقیم بگو «من همهوش هستم.»
+فارسی را طبیعی، انسانی، روان و بدون عبارت‌های ترجمه‌ای یا ماشینی بنویس.
+اول منظور کاربر را دقیق بفهم، بعد پاسخ بده. پرسش ساده را ساده و کوتاه جواب بده.
+در موضوع فنی، پاسخ را عملی، منظم و مرحله‌به‌مرحله ارائه کن.
+اطلاعات ساختگی تولید نکن. اگر برای پاسخ دقیق به اطلاعات زنده یا منبع بیرونی نیاز است، صریح بگو.
+در همین نسخه اجرای مدل محلی است؛ بنابراین ادعای جست‌وجوی وب یا انجام کار بیرونی نکن مگر ابزار واقعی در آینده به تو متصل شود.
+تاریخچه گفت‌وگو را به‌عنوان زمینه در نظر بگیر و ضمیرها و ارجاع‌ها را درست دنبال کن.
+از تکرار بی‌دلیل سؤال کاربر، عبارت‌های کلیشه‌ای و جواب‌های مبهم خودداری کن.
+پاسخ نهایی را مستقیم بده و زنجیره فکر داخلی را نمایش نده.
+/no_think"""
     }
 
     data class ModelSpec(
@@ -43,16 +48,16 @@ class MainActivity : Activity() {
     )
 
     private val proModel = ModelSpec(
-        "qwen15","کیفیت بهتر • Qwen2.5 1.5B","پیشنهادی برای Galaxy S22 Ultra",
-        "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf?download=true",
-        "حدود ۱ گیگابایت",986L*1024L*1024L,3072,6
+        "qwen3_4b","حالت حرفه‌ای • Qwen3 4B Q4_K_M","کیفیت بالاتر برای پاسخ دقیق‌تر",
+        "Qwen3-4B-Q4_K_M.gguf",
+        "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf?download=true",
+        "حدود ۲.۵ گیگابایت",2500L*1024L*1024L,4096,6
     )
     private val liteModel = ModelSpec(
-        "qwen05","سبک و سریع • Qwen2.5 0.5B","مصرف حافظه کمتر، کیفیت پایین‌تر",
-        "qwen2.5-0.5b-instruct-q4_k_m.gguf",
-        "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf?download=true",
-        "حدود ۴۹۱ مگابایت",491L*1024L*1024L,2048,6
+        "qwen3_17b","حالت توربو • Qwen3 1.7B Q4_K_M","سریع‌تر برای گفت‌وگوی روزمره",
+        "Qwen3-1.7B-Q4_K_M.gguf",
+        "https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf?download=true",
+        "حدود ۱.۲۸ گیگابایت",1282L*1024L*1024L,3072,6
     )
     private val models = listOf(proModel,liteModel)
     private val scope = CoroutineScope(SupervisorJob()+Dispatchers.Main)
@@ -120,11 +125,11 @@ class MainActivity : Activity() {
             text="همهوش";textSize=30f;setTextColor(ACCENT);setTypeface(typeface,Typeface.BOLD)
         })
         header.addView(TextView(this).apply{
-            text="دستیار محلی فارسی • بدون API • بدون هزینهٔ پیام";textSize=13f;setTextColor(MUTED)
+            text="دستیار شخصی محلی • حالت حرفه‌ای + توربو • بدون API";textSize=13f;setTextColor(MUTED)
             setPadding(0,dp(3),0,dp(8))
         })
         header.addView(TextView(this).apply{
-            text="● خصوصی  •  آفلاین بعد از دانلود مدل  •  رایگان";textSize=12f;setTextColor(ACCENT)
+            text="● خصوصی  •  آفلاین بعد از دانلود  •  مدل تا ۲.۵GB  •  رایگان";textSize=12f;setTextColor(ACCENT)
             background=roundRect(PANEL2,14);setPadding(dp(10),dp(8),dp(10),dp(8))
         })
         root.addView(header,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(10)})
@@ -200,7 +205,7 @@ class MainActivity : Activity() {
         var choice=models.indexOfFirst{it.id==selected.id}.coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("مدل هوش مصنوعی")
             .setSingleChoiceItems(labels,choice){_,w->choice=w}
-            .setMessage("هر دو مدل رایگان و محلی‌اند. مدل 1.5B کیفیت بهتر و مدل 0.5B سرعت بیشتر دارد.")
+            .setMessage("حالت حرفه‌ای 4B کیفیت بالاتری دارد و حدود ۲.۵GB دانلود می‌شود. حالت توربو 1.7B سبک‌تر و سریع‌تر است. هر دو رایگان و کاملاً محلی‌اند.")
             .setNegativeButton("انصراف",null)
             .setNeutralButton("حذف فایل مدل فعلی"){_,_->deleteSelectedModel()}
             .setPositiveButton("انتخاب"){_,_->
@@ -286,7 +291,7 @@ class MainActivity : Activity() {
     private suspend fun loadSelectedModelInternal(){
         releaseCurrentModel();val spec=selectedSpec();val file=modelFile(spec)
         if(!file.exists())throw IllegalStateException("فایل مدل پیدا نشد.")
-        model=Llama.loadModel(file.absolutePath,LlamaConfig(contextSize=spec.contextSize,threads=spec.threads,temperature=0.7f,topP=0.9f,topK=40))
+        model=Llama.loadModel(file.absolutePath,LlamaConfig(contextSize=spec.contextSize,threads=spec.threads,temperature=0.7f,topP=0.8f,topK=20))
         status.text="مدل آماده است؛ همهٔ پیام‌ها محلی پردازش می‌شوند.";downloadButton.text="آماده ✓";downloadButton.isEnabled=false;updateComposerEnabled()
     }
     private fun releaseCurrentModel(){model?.let{try{Llama.releaseModel(it)}catch(_:Throwable){}};model=null}
@@ -296,11 +301,15 @@ class MainActivity : Activity() {
         val active=model
         if(active==null||!active.isLoaded){Toast.makeText(this,"اول مدل رایگان را دانلود و آماده کن.",Toast.LENGTH_LONG).show();return}
         val text=draft.text.toString().trim();if(text.isEmpty())return
+        val normalized=text.replace("‌"," ").replace(Regex("\\s+")," ").trim()
+        if(normalized.matches(Regex("(?i)^(اسمت( چیه| چیست)?|اسم تو( چیه| چیست)?|نامت( چیه| چیست)?|تو کی هستی[؟?]?)$"))){
+            save("user",text);save("assistant","من همهوش هستم؛ دستیار شخصی فارسی‌زبان تو.");draft.setText("");status.text="آماده";return
+        }
         if(text.length>6000){Toast.makeText(this,"پیام را کوتاه‌تر بفرست.",Toast.LENGTH_LONG).show();return}
         save("user",text);draft.setText("");tts?.stop();chatBusy=true;status.text="همهوش روی خود گوشی در حال فکر کردن است…";send.text="در حال پاسخ…";updateComposerEnabled()
         chatJob=scope.launch{
             try{
-                val result=Llama.complete(active,buildConversationPrompt(),SYSTEM_PROMPT.trimIndent(),420)
+                val result=Llama.complete(active,buildConversationPrompt()+"\n/no_think",SYSTEM_PROMPT.trimIndent(),360)
                 val answer=result.text.trim().ifBlank{"پاسخ معتبری تولید نشد."};save("assistant",answer)
                 val speed=String.format(Locale.US,"%.1f",result.tokensPerSecond);status.text="آماده • ${result.tokensGenerated} توکن • ${speed} توکن/ثانیه";speak(answer)
             }catch(t:Throwable){status.text="تولید پاسخ ناموفق بود: ${friendlyError(t)}";bubble("assistant","پاسخ تولید نشد. دوباره تلاش کن یا مدل سبک‌تر را انتخاب کن.")}
@@ -309,7 +318,7 @@ class MainActivity : Activity() {
     }
 
     private fun buildConversationPrompt():String{
-        val sb=StringBuilder("گفت‌وگوی اخیر:\n")
+        val sb=StringBuilder("این تاریخچه واقعی گفت‌وگو است. فقط به آخرین پیام کاربر پاسخ بده و از متن قبلی فقط برای فهم زمینه استفاده کن.\n\n")
         store.readRecent(10).forEach{(role,body)->sb.append(if(role=="user")"کاربر: " else "همهوش: ").append(body).append('\n')}
         sb.append("همهوش:");return sb.toString()
     }
