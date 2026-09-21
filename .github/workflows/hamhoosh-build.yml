@@ -1,0 +1,774 @@
+name: Build HamHoosh APK
+
+on:
+  push:
+    branches:
+      - hamhoosh-apk-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Create Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/java/ir/yasin/hamhoosh
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "HamHoosh"
+          include(":app")
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2G -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'ir.yasin.hamhoosh'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'ir.yasin.hamhoosh'
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0.0'
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <queries>
+                  <intent>
+                      <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+                  </intent>
+                  <intent>
+                      <action android:name="android.intent.action.TTS_SERVICE" />
+                  </intent>
+              </queries>
+
+              <application
+                  android:label="همهوش"
+                  android:icon="@drawable/ic_launcher"
+                  android:theme="@style/AppTheme"
+                  android:supportsRtl="true"
+                  android:allowBackup="false"
+                  android:fullBackupContent="false"
+                  android:usesCleartextTraffic="false">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#5EEAD4</item>
+                  <item name="android:windowBackground">#101820</item>
+                  <item name="android:statusBarColor">#101820</item>
+                  <item name="android:navigationBarColor">#101820</item>
+                  <item name="android:windowLightStatusBar">false</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_launcher.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path android:fillColor="#101820" android:pathData="M0,0H108V108H0Z" />
+              <path android:fillColor="#5EEAD4" android:pathData="M27,27H81V67H58L39,82V67H27Z" />
+              <path android:fillColor="#101820" android:pathData="M39,43H46V50H39ZM62,43H69V50H62Z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/java/ir/yasin/hamhoosh/MainActivity.java <<'EOF'
+          package ir.yasin.hamhoosh;
+
+          import android.app.Activity;
+          import android.app.AlertDialog;
+          import android.content.ActivityNotFoundException;
+          import android.content.ContentValues;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.database.Cursor;
+          import android.database.sqlite.SQLiteDatabase;
+          import android.database.sqlite.SQLiteOpenHelper;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.graphics.drawable.GradientDrawable;
+          import android.os.Bundle;
+          import android.speech.RecognizerIntent;
+          import android.speech.tts.TextToSpeech;
+          import android.text.InputType;
+          import android.view.View;
+          import android.view.WindowInsets;
+          import android.widget.Button;
+          import android.widget.EditText;
+          import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.Switch;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+
+          import java.io.ByteArrayOutputStream;
+          import java.io.InputStream;
+          import java.io.OutputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URI;
+          import java.net.URL;
+          import java.nio.charset.StandardCharsets;
+          import java.util.ArrayList;
+          import java.util.Locale;
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
+
+          public class MainActivity extends Activity {
+              private static final int BG = Color.rgb(16, 24, 32);
+              private static final int PANEL = Color.rgb(29, 42, 53);
+              private static final int ACCENT = Color.rgb(94, 234, 212);
+              private static final int TEXT = Color.rgb(236, 244, 248);
+              private static final int SPEECH_REQUEST = 101;
+
+              private static final String SYSTEM_PROMPT = """
+                  تو «همهوش»، دستیار شخصی فارسی‌زبان هستی.
+                  پاسخ‌ها را روشن، دقیق، محترمانه و متناسب با پرسش بنویس.
+                  بین واقعیت تأییدشده، برداشت و پیشنهاد تفاوت بگذار.
+                  اگر اطلاعات کافی نداری، صریح بگو و پاسخ ساختگی نده.
+                  این اتصال فقط گفت‌وگوی متنی دارد و ابزار وب یا تولید تصویر و ویدئو در اختیار تو قرار نداده است.
+                  برای پرسش‌های زمان‌حساس، محدودیت دسترسی زنده را بیان کن.
+                  در کدنویسی، کد قابل فهم و پیش‌فرض‌های امن ارائه کن.
+                  داده‌های شخصی، رمزها و کلیدها را بی‌دلیل درخواست نکن.
+                  ادعای آگاهی کامل، بی‌خطایی یا توانایی نامحدود نکن.
+                  پاسخ را با توضیحات غیرضروری طولانی نکن.
+                  """;
+
+              private final ExecutorService worker = Executors.newSingleThreadExecutor();
+
+              private Store store;
+              private SharedPreferences prefs;
+              private LinearLayout feed;
+              private ScrollView scroll;
+              private EditText draft;
+              private TextView status;
+              private Button send;
+              private Button mic;
+              private Button settings;
+              private Button clear;
+              private Switch voice;
+              private TextToSpeech tts;
+
+              private String apiKey = "";
+              private boolean busy = false;
+              private boolean voiceReady = false;
+              private volatile boolean closed = false;
+
+              @Override
+              public void onCreate(Bundle state) {
+                  super.onCreate(state);
+
+                  store = new Store(this);
+                  prefs = getSharedPreferences("connection", MODE_PRIVATE);
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setBackgroundColor(BG);
+                  root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+                  root.setPadding(dp(16), dp(16), dp(16), dp(12));
+
+                  root.setOnApplyWindowInsetsListener((v, insets) -> {
+                      int top;
+                      int bottom;
+                      if (android.os.Build.VERSION.SDK_INT >= 30) {
+                          android.graphics.Insets bars = insets.getInsets(
+                              WindowInsets.Type.systemBars() | WindowInsets.Type.ime()
+                          );
+                          top = bars.top;
+                          bottom = bars.bottom;
+                      } else {
+                          top = insets.getSystemWindowInsetTop();
+                          bottom = insets.getSystemWindowInsetBottom();
+                      }
+                      v.setPadding(dp(16), dp(12) + top, dp(16), dp(12) + bottom);
+                      return insets;
+                  });
+
+                  TextView title = label("همهوش", 28);
+                  title.setTextColor(ACCENT);
+                  title.setTypeface(null, Typeface.BOLD);
+                  root.addView(title);
+
+                  TextView subtitle = label("دستیار شخصی • نسخه ۱.۰", 13);
+                  root.addView(subtitle);
+
+                  LinearLayout toolbar = row();
+                  settings = button("اتصال");
+                  clear = button("پاک‌کردن");
+                  toolbar.addView(settings, weighted());
+                  toolbar.addView(clear, weighted());
+                  root.addView(toolbar);
+
+                  voice = new Switch(this);
+                  voice.setText("خواندن پاسخ با صدای فارسی");
+                  voice.setTextColor(TEXT);
+                  voice.setEnabled(false);
+                  root.addView(voice);
+
+                  status = label("برای شروع، اتصال به مدل را تنظیم کن.", 12);
+                  root.addView(status);
+
+                  scroll = new ScrollView(this);
+                  scroll.setFillViewport(true);
+                  feed = new LinearLayout(this);
+                  feed.setOrientation(LinearLayout.VERTICAL);
+                  scroll.addView(feed);
+                  root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+                  draft = field("پیامت را بنویس…", false);
+                  draft.setInputType(InputType.TYPE_CLASS_TEXT
+                      | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                      | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+                  draft.setMinLines(2);
+                  draft.setMaxLines(5);
+                  root.addView(draft);
+
+                  LinearLayout actions = row();
+                  mic = button("گفتن");
+                  send = button("ارسال");
+                  actions.addView(mic, weighted());
+                  actions.addView(send, weighted());
+                  root.addView(actions);
+
+                  setContentView(root);
+                  root.requestApplyInsets();
+
+                  loadHistory();
+                  settings.setOnClickListener(v -> configure());
+                  send.setOnClickListener(v -> submit());
+                  mic.setOnClickListener(v -> recognize());
+
+                  clear.setOnClickListener(v ->
+                      new AlertDialog.Builder(this)
+                          .setTitle("حذف سابقه")
+                          .setMessage("گفت‌وگوهای ذخیره‌شده روی گوشی حذف شوند؟")
+                          .setNegativeButton("انصراف", null)
+                          .setPositiveButton("حذف", (d, w) -> {
+                              store.getWritableDatabase().delete("messages", null, null);
+                              feed.removeAllViews();
+                              if (tts != null) tts.stop();
+                              status.setText("سابقه محلی پاک شد.");
+                          })
+                          .show()
+                  );
+
+                  voice.setOnCheckedChangeListener((b, checked) -> {
+                      if (!checked && tts != null) tts.stop();
+                  });
+
+                  tts = new TextToSpeech(this, result ->
+                      runOnUiThread(() -> {
+                          if (closed || tts == null) return;
+                          if (result == TextToSpeech.SUCCESS) {
+                              int language = tts.setLanguage(Locale.forLanguageTag("fa-IR"));
+                              voiceReady = language != TextToSpeech.LANG_MISSING_DATA
+                                  && language != TextToSpeech.LANG_NOT_SUPPORTED;
+                              if (voiceReady) tts.setSpeechRate(1.0f);
+                          }
+                          voice.setEnabled(voiceReady);
+                          if (!voiceReady) {
+                              voice.setText("صدای فارسی روی موتور گفتار آماده نیست");
+                          }
+                      })
+                  );
+              }
+
+              private int dp(int value) {
+                  return Math.round(value * getResources().getDisplayMetrics().density);
+              }
+
+              private LinearLayout row() {
+                  LinearLayout view = new LinearLayout(this);
+                  view.setOrientation(LinearLayout.HORIZONTAL);
+                  return view;
+              }
+
+              private LinearLayout.LayoutParams weighted() {
+                  LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -2, 1f);
+                  p.setMargins(dp(3), dp(4), dp(3), dp(4));
+                  return p;
+              }
+
+              private TextView label(String text, int size) {
+                  TextView view = new TextView(this);
+                  view.setText(text);
+                  view.setTextSize(size);
+                  view.setTextColor(TEXT);
+                  view.setPadding(0, dp(5), 0, dp(5));
+                  return view;
+              }
+
+              private Button button(String text) {
+                  Button view = new Button(this);
+                  view.setText(text);
+                  view.setAllCaps(false);
+                  return view;
+              }
+
+              private EditText field(String hint, boolean password) {
+                  EditText view = new EditText(this);
+                  view.setHint(hint);
+                  view.setTextColor(TEXT);
+                  view.setHintTextColor(Color.LTGRAY);
+                  view.setTextSize(15);
+                  view.setPadding(dp(10), dp(10), dp(10), dp(10));
+                  if (password) {
+                      view.setInputType(InputType.TYPE_CLASS_TEXT
+                          | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                      view.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+                  }
+                  return view;
+              }
+
+              private void notifyUser(String message) {
+                  Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+              }
+
+              private void configure() {
+                  LinearLayout box = new LinearLayout(this);
+                  box.setOrientation(LinearLayout.VERTICAL);
+                  box.setPadding(dp(16), dp(8), dp(16), dp(8));
+
+                  box.addView(label(
+                      "نشانی پایه HTTPS سرویس سازگار با Chat Completions را وارد کن؛ معمولاً به /v1 ختم می‌شود.",
+                      13));
+
+                  EditText endpoint = field("https://your-server.example/v1", false);
+                  endpoint.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+                  endpoint.setText(prefs.getString("endpoint", ""));
+                  endpoint.setTextDirection(View.TEXT_DIRECTION_LTR);
+                  box.addView(endpoint);
+
+                  EditText model = field("نام دقیق مدل در سرویس انتخابی", false);
+                  model.setSingleLine(true);
+                  model.setText(prefs.getString("model", ""));
+                  model.setTextDirection(View.TEXT_DIRECTION_LTR);
+                  box.addView(model);
+
+                  EditText key = field("کلید API؛ فقط اگر سرویس نیاز دارد", true);
+                  key.setSingleLine(true);
+                  key.setText(apiKey);
+                  key.setTextDirection(View.TEXT_DIRECTION_LTR);
+                  box.addView(key);
+
+                  AlertDialog dialog = new AlertDialog.Builder(this)
+                      .setTitle("اتصال به مدل")
+                      .setView(box)
+                      .setNegativeButton("انصراف", null)
+                      .setPositiveButton("ذخیره", null)
+                      .create();
+
+                  dialog.setOnShowListener(ignored ->
+                      dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                          .setOnClickListener(v -> {
+                              String base = endpoint.getText().toString().trim().replaceAll("/+$", "");
+                              String name = model.getText().toString().trim();
+
+                              try {
+                                  URI uri = new URI(base);
+                                  if (!"https".equalsIgnoreCase(uri.getScheme())
+                                      || uri.getHost() == null
+                                      || uri.getRawUserInfo() != null
+                                      || uri.getRawQuery() != null
+                                      || uri.getRawFragment() != null) {
+                                      throw new IllegalArgumentException();
+                                  }
+                                  if (name.isEmpty()) {
+                                      model.setError("نام مدل لازم است.");
+                                      return;
+                                  }
+                              } catch (Exception error) {
+                                  endpoint.setError("نشانی پایه معتبر HTTPS وارد کن.");
+                                  return;
+                              }
+
+                              prefs.edit()
+                                  .putString("endpoint", base)
+                                  .putString("model", name)
+                                  .apply();
+                              apiKey = key.getText().toString().trim();
+                              status.setText("اتصال ذخیره شد؛ هنوز آزموده نشده.");
+                              dialog.dismiss();
+                          })
+                  );
+                  dialog.show();
+              }
+
+              private void loadHistory() {
+                  SQLiteDatabase db = store.getReadableDatabase();
+                  try (Cursor cursor = db.rawQuery(
+                      "SELECT role, body FROM "
+                          + "(SELECT id, role, body FROM messages ORDER BY id DESC LIMIT 100) "
+                          + "ORDER BY id",
+                      null)) {
+                      while (cursor.moveToNext()) {
+                          bubble(cursor.getString(0), cursor.getString(1));
+                      }
+                  }
+              }
+
+              private void save(String role, String text) {
+                  ContentValues values = new ContentValues();
+                  values.put("role", role);
+                  values.put("body", text);
+                  values.put("created_at", System.currentTimeMillis());
+                  store.getWritableDatabase().insertOrThrow("messages", null, values);
+                  bubble(role, text);
+              }
+
+              private void bubble(String role, String text) {
+                  TextView view = label(
+                      ("user".equals(role) ? "شما\n" : "همهوش\n") + text,
+                      16);
+                  view.setTextIsSelectable(true);
+                  view.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG);
+                  view.setLineSpacing(dp(3), 1.1f);
+                  view.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+                  GradientDrawable background = new GradientDrawable();
+                  background.setColor("user".equals(role) ? Color.rgb(25, 64, 66) : PANEL);
+                  background.setCornerRadius(dp(18));
+                  view.setBackground(background);
+
+                  LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
+                  p.setMargins(0, dp(6), 0, dp(6));
+                  feed.addView(view, p);
+
+                  scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+              }
+
+              private JSONArray context() throws Exception {
+                  JSONArray messages = new JSONArray();
+                  messages.put(new JSONObject()
+                      .put("role", "system")
+                      .put("content", SYSTEM_PROMPT));
+
+                  try (Cursor cursor = store.getReadableDatabase().rawQuery(
+                      "SELECT role, body FROM "
+                          + "(SELECT id, role, body FROM messages ORDER BY id DESC LIMIT 24) "
+                          + "ORDER BY id",
+                      null)) {
+                      while (cursor.moveToNext()) {
+                          messages.put(new JSONObject()
+                              .put("role", cursor.getString(0))
+                              .put("content", cursor.getString(1)));
+                      }
+                  }
+                  return messages;
+              }
+
+              private void setBusy(boolean value) {
+                  busy = value;
+                  send.setEnabled(!value);
+                  mic.setEnabled(!value);
+                  settings.setEnabled(!value);
+                  clear.setEnabled(!value);
+                  send.setText(value ? "در حال دریافت…" : "ارسال");
+              }
+
+              private void submit() {
+                  if (busy) return;
+
+                  String text = draft.getText().toString().trim();
+                  if (text.isEmpty()) return;
+
+                  String base = prefs.getString("endpoint", "");
+                  String model = prefs.getString("model", "");
+                  String key = apiKey;
+
+                  if (base.isEmpty() || model.isEmpty()) {
+                      configure();
+                      return;
+                  }
+
+                  if (text.length() > 12000) {
+                      notifyUser("پیام را کوتاه‌تر از ۱۲ هزار نویسه بفرست.");
+                      return;
+                  }
+
+                  final String payload;
+                  try {
+                      save("user", text);
+                      payload = new JSONObject()
+                          .put("model", model)
+                          .put("messages", context())
+                          .put("stream", false)
+                          .toString();
+                  } catch (Exception error) {
+                      status.setText("آماده‌سازی یا ذخیره پیام ناموفق بود.");
+                      return;
+                  }
+
+                  draft.setText("");
+                  if (tts != null) tts.stop();
+                  setBusy(true);
+                  status.setText("در حال ارتباط با سرویس انتخابی…");
+
+                  worker.execute(() -> {
+                      try {
+                          String answer = request(base, key, payload);
+                          runOnUiThread(() -> {
+                              if (closed) return;
+                              setBusy(false);
+                              try {
+                                  save("assistant", answer);
+                                  status.setText("پاسخ دریافت شد.");
+                                  speak(answer);
+                              } catch (Exception error) {
+                                  status.setText("پاسخ دریافت شد، اما ذخیره محلی ناموفق بود.");
+                              }
+                          });
+                      } catch (Exception error) {
+                          String message = error.getMessage();
+                          runOnUiThread(() -> {
+                              if (closed) return;
+                              setBusy(false);
+                              status.setText(message == null ? "ارتباط ناموفق بود." : message);
+                          });
+                      }
+                  });
+              }
+
+              private String request(String base, String key, String payload) throws Exception {
+                  HttpURLConnection connection = null;
+                  try {
+                      URL url = new URL(base + "/chat/completions");
+                      connection = (HttpURLConnection) url.openConnection();
+                      connection.setInstanceFollowRedirects(false);
+                      connection.setRequestMethod("POST");
+                      connection.setConnectTimeout(20000);
+                      connection.setReadTimeout(90000);
+                      connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                      connection.setRequestProperty("Accept", "application/json");
+
+                      if (!key.isEmpty()) {
+                          connection.setRequestProperty("Authorization", "Bearer " + key);
+                      }
+
+                      connection.setDoOutput(true);
+                      byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
+                      connection.setFixedLengthStreamingMode(bytes.length);
+                      try (OutputStream out = connection.getOutputStream()) {
+                          out.write(bytes);
+                      }
+
+                      int code = connection.getResponseCode();
+                      if (code < 200 || code >= 300) {
+                          if (code == 401 || code == 403) {
+                              throw new Exception("کلید یا مجوز دسترسی سرویس را بررسی کن.");
+                          }
+                          if (code == 429) {
+                              throw new Exception("سهمیه یا نرخ درخواست سرویس محدود شده است.");
+                          }
+                          throw new Exception("خطای سرویس: HTTP " + code);
+                      }
+
+                      String raw;
+                      try (InputStream input = connection.getInputStream();
+                           ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                          byte[] buffer = new byte[8192];
+                          int count;
+                          int total = 0;
+                          while ((count = input.read(buffer)) != -1) {
+                              total += count;
+                              if (total > 2 * 1024 * 1024) {
+                                  throw new Exception("پاسخ از سقف ایمن این نسخه بزرگ‌تر است.");
+                              }
+                              out.write(buffer, 0, count);
+                          }
+                          raw = out.toString(StandardCharsets.UTF_8.name());
+                      }
+
+                      JSONObject response = new JSONObject(raw);
+                      JSONObject message = response.getJSONArray("choices")
+                          .getJSONObject(0).getJSONObject("message");
+                      Object content = message.opt("content");
+
+                      if (!(content instanceof String) || ((String) content).trim().isEmpty()) {
+                          throw new Exception("پاسخ متنی سازگار دریافت نشد.");
+                      }
+                      return ((String) content).trim();
+                  } catch (java.net.SocketTimeoutException error) {
+                      throw new Exception("مهلت ارتباط تمام شد.");
+                  } catch (java.io.IOException error) {
+                      throw new Exception("ارتباط شبکه برقرار نشد یا قطع شد.");
+                  } finally {
+                      if (connection != null) connection.disconnect();
+                  }
+              }
+
+              private void recognize() {
+                  if (tts != null) tts.stop();
+                  Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                  intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                      RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                  intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fa-IR");
+                  intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "فارسی صحبت کن.");
+                  try {
+                      startActivityForResult(intent, SPEECH_REQUEST);
+                  } catch (ActivityNotFoundException error) {
+                      notifyUser("سرویس تشخیص گفتار روی گوشی پیدا نشد.");
+                  } catch (SecurityException error) {
+                      notifyUser("سرویس گفتار اجازه اجرا نداد.");
+                  }
+              }
+
+              @Override
+              protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                  super.onActivityResult(requestCode, resultCode, data);
+                  if (requestCode == SPEECH_REQUEST
+                      && resultCode == RESULT_OK && data != null) {
+                      ArrayList<String> results =
+                          data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+                      if (results != null && !results.isEmpty()) {
+                          draft.setText(results.get(0));
+                          draft.setSelection(draft.length());
+                      }
+                  }
+              }
+
+              private void speak(String text) {
+                  if (!voiceReady || !voice.isChecked() || tts == null) return;
+                  int limit = TextToSpeech.getMaxSpeechInputLength();
+                  if (text.length() > limit) {
+                      status.setText("پاسخ ذخیره شد؛ برای خواندن صوتی طولانی است.");
+                      return;
+                  }
+                  tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "answer");
+              }
+
+              @Override
+              protected void onDestroy() {
+                  closed = true;
+                  apiKey = "";
+                  worker.shutdownNow();
+                  if (tts != null) {
+                      tts.stop();
+                      tts.shutdown();
+                  }
+                  if (store != null) store.close();
+                  super.onDestroy();
+              }
+
+              static class Store extends SQLiteOpenHelper {
+                  Store(Context context) {
+                      super(context, "hamhoosh.db", null, 1);
+                  }
+
+                  @Override
+                  public void onCreate(SQLiteDatabase db) {
+                      db.execSQL(
+                          "CREATE TABLE messages ("
+                              + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                              + "role TEXT NOT NULL CHECK(role IN ('user','assistant')),"
+                              + "body TEXT NOT NULL,"
+                              + "created_at INTEGER NOT NULL)"
+                      );
+                  }
+
+                  @Override
+                  public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+                      throw new IllegalStateException("Database migration must be implemented");
+                  }
+              }
+          }
+          EOF
+
+      - name: Compile debug APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: HamHoosh-debug-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
