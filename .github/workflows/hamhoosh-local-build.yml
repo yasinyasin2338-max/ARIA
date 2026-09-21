@@ -3,7 +3,7 @@ name: Build HamHoosh Local APK
 on:
   push:
     branches:
-      - hamhoosh-local-v1-1
+      - hamhoosh-v1-2-pro
   workflow_dispatch:
 
 permissions:
@@ -41,6 +41,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HamHoosh-1.1-Local-APK
+          name: HamHoosh-1.2-Pro-APK
           path: hamhoosh-local/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
