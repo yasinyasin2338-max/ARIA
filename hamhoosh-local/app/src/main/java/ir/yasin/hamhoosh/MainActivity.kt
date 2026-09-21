@@ -88,6 +88,9 @@ class MainActivity : Activity() {
     override fun onCreate(state:Bundle?){
         super.onCreate(state)
         prefs=getSharedPreferences("hamhoosh_local",MODE_PRIVATE)
+        if(!prefs.getBoolean("speed_v13_migrated",false)){
+            prefs.edit().putString("model_id",liteModel.id).putBoolean("speed_v13_migrated",true).apply()
+        }
         store=Store(this)
         buildUi()
         loadHistory()
@@ -96,8 +99,8 @@ class MainActivity : Activity() {
     }
 
     private fun selectedSpec():ModelSpec {
-        val id=prefs.getString("model_id",proModel.id)
-        return models.firstOrNull{it.id==id}?:proModel
+        val id=prefs.getString("model_id",liteModel.id)
+        return models.firstOrNull{it.id==id}?:liteModel
     }
     private fun modelDir()=File(getExternalFilesDir(null),"models").apply{mkdirs()}
     private fun modelFile(spec:ModelSpec=selectedSpec())=File(modelDir(),spec.fileName)
@@ -125,11 +128,11 @@ class MainActivity : Activity() {
             text="همهوش";textSize=30f;setTextColor(ACCENT);setTypeface(typeface,Typeface.BOLD)
         })
         header.addView(TextView(this).apply{
-            text="دستیار شخصی محلی • حالت حرفه‌ای + توربو • بدون API";textSize=13f;setTextColor(MUTED)
+            text="دستیار شخصی محلی • Turbo پیش‌فرض • Pro اختیاری • بدون API";textSize=13f;setTextColor(MUTED)
             setPadding(0,dp(3),0,dp(8))
         })
         header.addView(TextView(this).apply{
-            text="● خصوصی  •  آفلاین بعد از دانلود  •  مدل تا ۲.۵GB  •  رایگان";textSize=12f;setTextColor(ACCENT)
+            text="● پاسخ فوری برای فرمان‌های ساده  •  آفلاین  •  رایگان";textSize=12f;setTextColor(ACCENT)
             background=roundRect(PANEL2,14);setPadding(dp(10),dp(8),dp(10),dp(8))
         })
         root.addView(header,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(10)})
@@ -296,20 +299,39 @@ class MainActivity : Activity() {
     }
     private fun releaseCurrentModel(){model?.let{try{Llama.releaseModel(it)}catch(_:Throwable){}};model=null}
 
+    private fun instantReply(text:String):String?{
+        val n=text
+            .replace('ي','ی').replace('ك','ک').replace("‌"," ")
+            .replace(Regex("\\s+")," ").trim()
+            .replace(Regex("[؟?!!.،,]+$"),"")
+            .trim().lowercase(Locale.forLanguageTag("fa-IR"))
+        return when {
+            n in setOf("سلام","درود","سلام همهوش","سلام خوبی","سلام، خوبی") ->
+                "سلام یاسین 👋 من همهوشم. بگو روی چی کار کنیم؟"
+            n.matches(Regex("^(اسمت( چیه| چیست)?|اسم تو( چیه| چیست)?|نامت( چیه| چیست)?|تو کی هستی)$")) ->
+                "من همهوش هستم؛ دستیار شخصی فارسی‌زبان تو."
+            n in setOf("خوبی","حالت چطوره","حالت خوبه","چطوری") ->
+                "خوبم و آماده‌ام. بگو چه کاری می‌خوای انجام بدیم."
+            n in setOf("مرسی","ممنون","دمت گرم","تشکر") ->
+                "خواهش می‌کنم 🌱"
+            else -> null
+        }
+    }
+
     private fun submit(){
         if(chatBusy||modelBusy)return
         val active=model
         if(active==null||!active.isLoaded){Toast.makeText(this,"اول مدل رایگان را دانلود و آماده کن.",Toast.LENGTH_LONG).show();return}
         val text=draft.text.toString().trim();if(text.isEmpty())return
-        val normalized=text.replace("‌"," ").replace(Regex("\\s+")," ").trim()
-        if(normalized.matches(Regex("(?i)^(اسمت( چیه| چیست)?|اسم تو( چیه| چیست)?|نامت( چیه| چیست)?|تو کی هستی[؟?]?)$"))){
-            save("user",text);save("assistant","من همهوش هستم؛ دستیار شخصی فارسی‌زبان تو.");draft.setText("");status.text="آماده";return
+        val fast=instantReply(text)
+        if(fast!=null){
+            save("user",text);save("assistant",fast);draft.setText("");status.text="آماده • پاسخ فوری";speak(fast);return
         }
         if(text.length>6000){Toast.makeText(this,"پیام را کوتاه‌تر بفرست.",Toast.LENGTH_LONG).show();return}
-        save("user",text);draft.setText("");tts?.stop();chatBusy=true;status.text="همهوش روی خود گوشی در حال فکر کردن است…";send.text="در حال پاسخ…";updateComposerEnabled()
+        save("user",text);draft.setText("");tts?.stop();chatBusy=true;status.text="در حال پردازش محلی… حالت Turbo برای سرعت بیشتر پیشنهاد می‌شود.";send.text="در حال پاسخ…";updateComposerEnabled()
         chatJob=scope.launch{
             try{
-                val result=Llama.complete(active,buildConversationPrompt()+"\n/no_think",SYSTEM_PROMPT.trimIndent(),360)
+                val result=Llama.complete(active,buildConversationPrompt()+"\n/no_think",SYSTEM_PROMPT.trimIndent(),220)
                 val answer=result.text.trim().ifBlank{"پاسخ معتبری تولید نشد."};save("assistant",answer)
                 val speed=String.format(Locale.US,"%.1f",result.tokensPerSecond);status.text="آماده • ${result.tokensGenerated} توکن • ${speed} توکن/ثانیه";speak(answer)
             }catch(t:Throwable){status.text="تولید پاسخ ناموفق بود: ${friendlyError(t)}";bubble("assistant","پاسخ تولید نشد. دوباره تلاش کن یا مدل سبک‌تر را انتخاب کن.")}
@@ -319,7 +341,7 @@ class MainActivity : Activity() {
 
     private fun buildConversationPrompt():String{
         val sb=StringBuilder("این تاریخچه واقعی گفت‌وگو است. فقط به آخرین پیام کاربر پاسخ بده و از متن قبلی فقط برای فهم زمینه استفاده کن.\n\n")
-        store.readRecent(10).forEach{(role,body)->sb.append(if(role=="user")"کاربر: " else "همهوش: ").append(body).append('\n')}
+        store.readRecent(6).forEach{(role,body)->sb.append(if(role=="user")"کاربر: " else "همهوش: ").append(body).append('\n')}
         sb.append("همهوش:");return sb.toString()
     }
     private fun updateComposerEnabled(){
