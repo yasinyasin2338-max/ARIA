@@ -1,0 +1,4 @@
+HamHoosh 1.3.0 Speed
+Default: Qwen3 1.7B Q4_K_M
+Pro: Qwen3 4B Q4_K_M
+Fast local intent router enabled
